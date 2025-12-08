@@ -1,3 +1,4 @@
+
 export enum MachineState {
   IDLE = 'IDLE',
   RUNNING = 'RUNNING',
@@ -22,6 +23,7 @@ export interface SimulationState {
   tool: number;
   activeToolOffset: number; // Current Length Offset Value (G43/G44)
   toolRadiusComp: 'OFF' | 'LEFT' | 'RIGHT'; // G40/G41/G42 Status
+  positioningMode: 'ABS' | 'INC'; // G90/G91 Status
   coolant: boolean;
   path: { x: number; z: number; type: 'cut' | 'rapid' }[];
 }
@@ -41,4 +43,7 @@ export interface ToolConfig {
   color: string;
   width: number;
   lengthOffset: number; // Default length offset for this tool
+  noseRadius: number;
+  holderMaterial?: string;
+  holderType?: string;
 }
