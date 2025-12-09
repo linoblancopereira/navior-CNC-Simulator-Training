@@ -14,7 +14,7 @@ export const GeminiTutor: React.FC = () => {
 
     try {
       // Using the latest Gemini API pattern
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' }); 
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || 'AIzaSyCUrnIFkzqji3gnU3FPmXDea52L8TLhcAc' }); 
       
       const modelResp = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
