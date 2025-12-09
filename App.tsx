@@ -4,8 +4,9 @@ import { parseGCode } from './services/gcodeParser';
 import { Editor } from './components/Editor';
 import { Simulator } from './components/Simulator';
 import { GeminiTutor } from './components/GeminiTutor';
+import { CadImporter } from './components/CadImporter';
 import { MachineState, SimulationState, MaterialType, ToolConfig } from './types';
-import { Play, Pause, RotateCcw, RotateCw, Layout, Gauge, AlertTriangle, XCircle, Terminal, Layers, Octagon, Ban, Droplets, Ruler, Settings, Wrench, RefreshCw } from 'lucide-react';
+import { Play, Pause, RotateCcw, RotateCw, Layout, Gauge, AlertTriangle, XCircle, Terminal, Layers, Octagon, Ban, Droplets, Ruler, Settings, Wrench, RefreshCw, CloudDownload } from 'lucide-react';
 
 export default function App() {
   const [currentLessonId, setCurrentLessonId] = useState(LESSONS[0].id);
@@ -15,6 +16,9 @@ export default function App() {
   const [feedOverride, setFeedOverride] = useState(100);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
+  // CAD Import Modal State
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+
   // Tool State Management (Dynamic Wear)
   const [tools, setTools] = useState<ToolConfig[]>(TOOLS);
 
@@ -97,6 +101,16 @@ export default function App() {
   return (
     <div className="flex h-screen bg-black text-zinc-300 font-sans overflow-hidden">
       
+      {/* CAD Importer Modal */}
+      <CadImporter 
+        isOpen={isImportModalOpen} 
+        onClose={() => setIsImportModalOpen(false)}
+        onCodeGenerated={(generatedCode) => {
+            setCode(generatedCode);
+            handleReset();
+        }}
+      />
+
       {/* Sidebar */}
       <aside className="w-64 bg-zinc-900/80 backdrop-blur-sm border-r border-zinc-800 flex flex-col z-10">
         <div className="p-4 border-b border-zinc-800 flex items-center gap-2 bg-gradient-to-r from-zinc-900 to-zinc-800">
@@ -168,6 +182,17 @@ export default function App() {
                     title="Reset"
                 >
                     <RotateCcw size={16} />
+                </button>
+
+                <div className="h-8 w-px bg-zinc-700 mx-2"></div>
+
+                {/* Import / CAM Button */}
+                <button 
+                    onClick={() => setIsImportModalOpen(true)}
+                    className="flex items-center gap-2 px-3 py-2 rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-white border border-zinc-700 transition-all text-xs font-bold"
+                >
+                    <CloudDownload size={16} className="text-blue-400" />
+                    <span className="hidden xl:inline">IMPORT CAD/CAM</span>
                 </button>
             </div>
 

@@ -48,7 +48,7 @@ export const Simulator: React.FC<SimulatorProps> = ({
   onToolWear
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const requestRef = useRef<number>();
+  const requestRef = useRef<number>(0);
   const particlesRef = useRef<Particle[]>([]);
   const [tooltip, setTooltip] = useState<{x: number, y: number, tool: ToolConfig} | null>(null);
   
