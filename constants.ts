@@ -1,3 +1,4 @@
+
 import { Lesson, ToolConfig } from './types';
 
 export const TOOLS: ToolConfig[] = [
@@ -10,7 +11,8 @@ export const TOOLS: ToolConfig[] = [
     lengthOffset: 5.5, 
     noseRadius: 0.8,
     holderMaterial: 'Acero 4140 Templado',
-    holderType: 'DCLNR 2525M 12'
+    holderType: 'DCLNR 2525M 12',
+    wear: 0
   },
   { 
     id: 2, 
@@ -21,7 +23,8 @@ export const TOOLS: ToolConfig[] = [
     lengthOffset: 3.0, 
     noseRadius: 0.2,
     holderMaterial: 'Acero para Resortes',
-    holderType: 'MGEHR 2525-3'
+    holderType: 'MGEHR 2525-3',
+    wear: 0
   },
   { 
     id: 3, 
@@ -32,7 +35,8 @@ export const TOOLS: ToolConfig[] = [
     lengthOffset: 8.2, 
     noseRadius: 0.1,
     holderMaterial: 'Acero Endurecido',
-    holderType: 'SER 2525M 16'
+    holderType: 'SER 2525M 16',
+    wear: 0
   },
 ];
 
@@ -425,9 +429,43 @@ N120 Z5
 N130 M30`
   },
   {
-    id: 'parting',
-    title: '14. Tronzado de Pieza',
+    id: 'tool-wear',
+    title: '14. Tool Wear Simulation',
     module: 7,
+    content: `
+# Tool Wear & M100
+
+Tools degrade over time, affecting finish and dimensions. In this simulator:
+
+1. **Wear:** Increases when cutting hard materials. The tool tip becomes rounded and red.
+2. **Reset:** Use **M100** to replace the insert (reset wear to 0%).
+
+**Material Hardness:**
+* Steel: High Wear
+* Aluminum: Low Wear
+* Wood: Very Low Wear
+
+**Exercise:** Run the program and watch the "Tool Wear" indicator increase. Then use M100 to reset it.
+    `,
+    defaultCode: `N10 G28 U0 W0
+N20 T0101
+N30 G97 S1500 M03
+(Cut repeatedly to induce wear)
+N40 G00 X50 Z2
+N50 G01 Z-50 F0.3
+N60 G00 X55 Z2
+N70 G01 X45 F0.3
+N80 G01 Z-50
+N90 G00 X60 Z2
+(Reset Wear)
+N100 M100 (New Insert)
+N110 G28 U0 W0
+N120 M30`
+  },
+  {
+    id: 'parting',
+    title: '15. Tronzado de Pieza',
+    module: 8,
     content: `
 # Operación de Tronzado
 
@@ -450,7 +488,7 @@ N100 M30`
   },
   {
     id: 'capstone',
-    title: '15. Proyecto Final',
+    title: '16. Proyecto Final',
     module: 8,
     content: `
 # Desafío Final: Perno Especial

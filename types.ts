@@ -6,6 +6,8 @@ export enum MachineState {
   ALARM = 'ALARM'
 }
 
+export type MaterialType = 'Steel' | 'Aluminum' | 'Wood' | 'Carbon Fiber' | 'Epoxi' | 'POM';
+
 export interface GCodeCommand {
   type: 'G' | 'M' | 'T' | 'S' | 'F' | 'COMMENT';
   code?: number;
@@ -46,4 +48,5 @@ export interface ToolConfig {
   noseRadius: number;
   holderMaterial?: string;
   holderType?: string;
+  wear: number; // 0 to 100 percentage
 }
