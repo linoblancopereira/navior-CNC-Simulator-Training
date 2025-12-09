@@ -141,7 +141,7 @@ export const Simulator: React.FC<SimulatorProps> = ({
         
         // Basic Validation
         if (cmd.type === 'G' && cmd.code !== undefined && !VALID_G_CODES.includes(cmd.code)) {
-            onError(`Error Sintaxis: G${cmd.code} no soportado en línea ${cmd.line}`);
+            onError(`Syntax Error: G${cmd.code} not supported on line ${cmd.line}`);
             return;
         }
 
@@ -893,4 +893,4 @@ export const Simulator: React.FC<SimulatorProps> = ({
         )}
     </div>
   );
-};
+}

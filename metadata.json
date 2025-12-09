@@ -1,5 +1,5 @@
 {
-  "description": "Plataforma interactiva de aprendizaje de uso de CNC con simulador y ejercicios teoricos",
+  "description": "Interactive CNC learning platform with simulator and theoretical exercises",
   "requestFramePermissions": [],
-  "name": "Navior CNC Simulator Training"
+  "name": "cnc ai trainer"
 }
