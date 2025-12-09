@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { GCodeCommand, SimulationState, MachineState, ToolConfig } from '../types';
 import { TOOLS } from '../constants';
+import { AlertTriangle, CheckCircle2, Layers, RotateCw, RotateCcw, Ban, Settings2, Octagon } from 'lucide-react';
 
 interface SimulatorProps {
   commands: GCodeCommand[];
@@ -9,6 +10,8 @@ interface SimulatorProps {
   feedOverride: number;
   onError: (msg: string) => void;
   onStateChange?: (state: SimulationState) => void;
+  onRequestPause?: () => void;
+  onRequestResume?: () => void;
 }
 
 interface Particle {
@@ -27,12 +30,38 @@ const SCALE = 3; // Pixels per mm
 
 const VALID_G_CODES = [0, 1, 2, 3, 4, 20, 21, 28, 32, 33, 40, 41, 42, 43, 44, 49, 50, 70, 71, 72, 73, 74, 75, 76, 90, 91, 96, 97, 98, 99];
 
-export const Simulator: React.FC<SimulatorProps> = ({ commands, machineState, currentLine, feedOverride, onError, onStateChange }) => {
+type MaterialType = 'Steel' | 'Aluminum' | 'Wood' | 'Carbon Fiber';
+
+export const Simulator: React.FC<SimulatorProps> = ({ 
+  commands, 
+  machineState, 
+  currentLine, 
+  feedOverride, 
+  onError, 
+  onStateChange,
+  onRequestPause,
+  onRequestResume 
+}) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const requestRef = useRef<number>();
   const particlesRef = useRef<Particle[]>([]);
   const [tooltip, setTooltip] = useState<{x: number, y: number, tool: ToolConfig} | null>(null);
   
+  // Animation Physics Refs
+  const lastTimeRef = useRef<number>(0);
+  const rotationRef = useRef<number>(0);
+
+  // Simulation Settings
+  const [stockMaterial, setStockMaterial] = useState<MaterialType>('Steel');
+  const [manualSpindle, setManualSpindle] = useState<{dir: 'CW' | 'CCW' | 'STOP', speed: number}>({
+      dir: 'STOP',
+      speed: 1000
+  });
+  
+  // Tool Change Prompt State
+  const [pendingToolChange, setPendingToolChange] = useState<GCodeCommand | null>(null);
+  const lastHandledToolLine = useRef<number>(-1);
+
   // State for the simulation
   const [simState, setSimState] = useState<SimulationState>({
     x: 100, // Safe position
@@ -44,21 +73,32 @@ export const Simulator: React.FC<SimulatorProps> = ({ commands, machineState, cu
     activeToolOffset: 0,
     toolRadiusComp: 'OFF',
     positioningMode: 'ABS',
-    coolant: false,
+    coolant: 'OFF',
     path: []
   });
 
   // Previous position ref to detect movement for sparks
   const prevPosRef = useRef({ x: 100, z: 50 });
 
+  // Handle Reset / Rewind logic for Tool Change tracking
+  useEffect(() => {
+    if (machineState === MachineState.IDLE || currentLine < lastHandledToolLine.current) {
+        setPendingToolChange(null);
+        lastHandledToolLine.current = -1;
+    }
+  }, [machineState, currentLine]);
+
   // 1. Interpreter Engine
   useEffect(() => {
     if (machineState === MachineState.ALARM) return;
 
     if (machineState === MachineState.IDLE) {
+        // In IDLE mode, reflect manual controls
         const idleState: SimulationState = {
-            x: 100, z: 50, feedRate: 0, spindleSpeed: 0, spindleDirection: 'STOP',
-            tool: 1, activeToolOffset: 0, toolRadiusComp: 'OFF', positioningMode: 'ABS', coolant: false, path: []
+            x: 100, z: 50, feedRate: 0, 
+            spindleSpeed: manualSpindle.dir !== 'STOP' ? manualSpindle.speed : 0, 
+            spindleDirection: manualSpindle.dir,
+            tool: 1, activeToolOffset: 0, toolRadiusComp: 'OFF', positioningMode: 'ABS', coolant: 'OFF', path: []
         };
         setSimState(idleState);
         if (onStateChange) onStateChange(idleState);
@@ -68,6 +108,17 @@ export const Simulator: React.FC<SimulatorProps> = ({ commands, machineState, cu
 
     if (!commands || commands.length === 0) return;
 
+    // Check for Tool Change Request at current line
+    const activeCmd = commands[currentLine];
+    if (activeCmd && activeCmd.type === 'T' && machineState === MachineState.RUNNING) {
+        // Only trigger if we haven't handled this line yet
+        if (lastHandledToolLine.current !== currentLine) {
+            if (onRequestPause) onRequestPause();
+            setPendingToolChange(activeCmd);
+            lastHandledToolLine.current = currentLine;
+        }
+    }
+
     let tempX = 100;
     let tempZ = 50;
     let tempS = 0;
@@ -76,6 +127,7 @@ export const Simulator: React.FC<SimulatorProps> = ({ commands, machineState, cu
     let tempOffset = 0;
     let tempRadiusComp: 'OFF' | 'LEFT' | 'RIGHT' = 'OFF';
     let tempPositioning: 'ABS' | 'INC' = 'ABS';
+    let tempCoolant: 'OFF' | 'MIST' | 'FLOOD' = 'OFF';
     const newPath: { x: number; z: number; type: 'cut' | 'rapid' }[] = [];
 
     // Run interpreter
@@ -122,6 +174,9 @@ export const Simulator: React.FC<SimulatorProps> = ({ commands, machineState, cu
             if (cmd.code === 3) tempSpindleDir = 'CW';
             else if (cmd.code === 4) tempSpindleDir = 'CCW';
             else if (cmd.code === 5) tempSpindleDir = 'STOP';
+            else if (cmd.code === 7) tempCoolant = 'MIST';
+            else if (cmd.code === 8) tempCoolant = 'FLOOD';
+            else if (cmd.code === 9) tempCoolant = 'OFF';
         }
 
         let type: 'cut' | 'rapid' = 'rapid';
@@ -137,13 +192,13 @@ export const Simulator: React.FC<SimulatorProps> = ({ commands, machineState, cu
     const newState: SimulationState = { 
         x: tempX, z: tempZ, spindleSpeed: tempS, spindleDirection: tempSpindleDir,
         activeToolOffset: tempOffset, toolRadiusComp: tempRadiusComp, positioningMode: tempPositioning,
-        path: newPath, tool: tempTool, feedRate: 0, coolant: false
+        path: newPath, tool: tempTool, feedRate: 0, coolant: tempCoolant
     };
 
     setSimState(newState);
     if (onStateChange) onStateChange(newState);
 
-  }, [commands, currentLine, machineState, onError, onStateChange]);
+  }, [commands, currentLine, machineState, onError, onStateChange, onRequestPause, manualSpindle]);
 
   // Handle Tooltip
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -179,6 +234,11 @@ export const Simulator: React.FC<SimulatorProps> = ({ commands, machineState, cu
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    // Delta Time Calculation for Smooth Animation
+    if (lastTimeRef.current === 0) lastTimeRef.current = time;
+    const deltaTime = (time - lastTimeRef.current) / 1000; // seconds
+    lastTimeRef.current = time;
+
     const width = canvas.width;
     const height = canvas.height;
     const zZeroPixel = width - ORIGIN_X_OFFSET;
@@ -187,7 +247,7 @@ export const Simulator: React.FC<SimulatorProps> = ({ commands, machineState, cu
     const stockPixelDia = STOCK_DIAMETER * SCALE;
     const chuckX = zZeroPixel - stockPixelLen;
 
-    // --- Particle Logic (Sparks) ---
+    // --- Particle Logic (Sparks/Chips) ---
     const isCutting = simState.spindleDirection !== 'STOP' && 
                       simState.path.length > 0 && 
                       simState.path[simState.path.length - 1].type === 'cut';
@@ -197,6 +257,20 @@ export const Simulator: React.FC<SimulatorProps> = ({ commands, machineState, cu
     const isMoving = Math.abs(dx) > 0.001 || Math.abs(dz) > 0.001;
 
     if (isCutting && isMoving && simState.x <= STOCK_DIAMETER + 1) {
+        let pColor1 = '#ffaa00';
+        let pColor2 = '#ffff00';
+        
+        if (stockMaterial === 'Aluminum') {
+            pColor1 = '#e2e8f0';
+            pColor2 = '#ffffff';
+        } else if (stockMaterial === 'Wood') {
+            pColor1 = '#d97706';
+            pColor2 = '#92400e';
+        } else if (stockMaterial === 'Carbon Fiber') {
+            pColor1 = '#111111';
+            pColor2 = '#333333';
+        }
+
         for(let i=0; i<3; i++) {
             const toolZPixel = zZeroPixel + (simState.z * SCALE);
             const toolXPixel = centerY - ((simState.x / 2) * SCALE);
@@ -206,7 +280,7 @@ export const Simulator: React.FC<SimulatorProps> = ({ commands, machineState, cu
                 vx: (Math.random() - 0.2) * 4,
                 vy: (Math.random() - 0.5) * 4,
                 life: 1.0,
-                color: Math.random() > 0.5 ? '#ffaa00' : '#ffff00'
+                color: Math.random() > 0.5 ? pColor1 : pColor2
             });
         }
     }
@@ -237,23 +311,28 @@ export const Simulator: React.FC<SimulatorProps> = ({ commands, machineState, cu
     ctx.beginPath(); ctx.moveTo(0, centerY); ctx.lineTo(width, centerY); ctx.stroke();
     ctx.setLineDash([]);
 
-    // --- Chuck ---
+    // --- Chuck & Spindle Rotation Physics ---
+    const effectiveSpindleSpeed = simState.spindleSpeed * (feedOverride / 100); 
+    const speedRadPerSec = (effectiveSpindleSpeed / 60) * 2 * Math.PI;
+
+    if (simState.spindleDirection === 'CW') {
+        rotationRef.current += speedRadPerSec * deltaTime;
+    } else if (simState.spindleDirection === 'CCW') {
+        rotationRef.current -= speedRadPerSec * deltaTime;
+    }
+    // No change if STOP (keeps momentum effectively 0 for now)
+
     const chuckHeight = stockPixelDia + 40;
     const chuckWidth = 60;
     ctx.save();
     ctx.translate(chuckX - (chuckWidth/2), centerY); 
     
-    const effectiveSpindleSpeed = simState.spindleSpeed * (feedOverride / 100); 
-    let rotation = 0;
-    if (simState.spindleDirection === 'CW') rotation = (time / 1000) * (effectiveSpindleSpeed / 60) * 2 * Math.PI; 
-    else if (simState.spindleDirection === 'CCW') rotation = -(time / 1000) * (effectiveSpindleSpeed / 60) * 2 * Math.PI;
-
     const housingGrad = ctx.createLinearGradient(0, -chuckHeight/2, 0, chuckHeight/2);
     housingGrad.addColorStop(0, '#222'); housingGrad.addColorStop(0.5, '#444'); housingGrad.addColorStop(1, '#222');
     ctx.fillStyle = housingGrad;
     ctx.fillRect(-chuckWidth/2 - 20, -chuckHeight/2 - 10, chuckWidth + 20, chuckHeight + 20);
 
-    ctx.rotate(rotation);
+    ctx.rotate(rotationRef.current);
     const faceGrad = ctx.createRadialGradient(0,0, 5, 0,0, chuckHeight/2);
     faceGrad.addColorStop(0, '#555'); faceGrad.addColorStop(1, '#111');
     ctx.beginPath(); ctx.arc(0, 0, chuckHeight/2, 0, Math.PI * 2);
@@ -265,26 +344,83 @@ export const Simulator: React.FC<SimulatorProps> = ({ commands, machineState, cu
     }
     ctx.restore();
 
-    // --- Stock ---
+    // --- Stock (Dynamic Material) ---
     const stockGradient = ctx.createLinearGradient(0, centerY - (stockPixelDia/2), 0, centerY + (stockPixelDia/2));
-    if (simState.spindleDirection === 'STOP') {
-        stockGradient.addColorStop(0, '#2d3748');
-        stockGradient.addColorStop(0.2, '#718096');
-        stockGradient.addColorStop(0.5, '#a0aec0');
-        stockGradient.addColorStop(0.8, '#718096');
-        stockGradient.addColorStop(1, '#2d3748');
+    
+    if (stockMaterial === 'Wood') {
+        if (simState.spindleDirection === 'STOP') {
+            stockGradient.addColorStop(0, '#3f2c22'); 
+            stockGradient.addColorStop(0.4, '#8d5a36'); 
+            stockGradient.addColorStop(0.6, '#a67c52'); 
+            stockGradient.addColorStop(1, '#3f2c22');
+        } else {
+             stockGradient.addColorStop(0, '#5c3a2e');
+             stockGradient.addColorStop(0.5, '#d4a373');
+             stockGradient.addColorStop(1, '#5c3a2e');
+        }
+    } else if (stockMaterial === 'Aluminum') {
+         if (simState.spindleDirection === 'STOP') {
+            stockGradient.addColorStop(0, '#718096');
+            stockGradient.addColorStop(0.3, '#e2e8f0');
+            stockGradient.addColorStop(0.5, '#edf2f7'); 
+            stockGradient.addColorStop(0.7, '#e2e8f0');
+            stockGradient.addColorStop(1, '#718096');
+         } else {
+            stockGradient.addColorStop(0, '#a0aec0');
+            stockGradient.addColorStop(0.5, '#ffffff'); 
+            stockGradient.addColorStop(1, '#a0aec0');
+         }
+    } else if (stockMaterial === 'Carbon Fiber') {
+        // Carbon Fiber Dark Look
+        if (simState.spindleDirection === 'STOP') {
+            stockGradient.addColorStop(0, '#0a0a0a');
+            stockGradient.addColorStop(0.3, '#1f1f1f');
+            stockGradient.addColorStop(0.5, '#2e2e2e');
+            stockGradient.addColorStop(0.7, '#1f1f1f');
+            stockGradient.addColorStop(1, '#0a0a0a');
+        } else {
+            // Blurred when spinning
+            stockGradient.addColorStop(0, '#111');
+            stockGradient.addColorStop(0.5, '#333');
+            stockGradient.addColorStop(1, '#111');
+        }
     } else {
-        stockGradient.addColorStop(0, '#4a5568');
-        stockGradient.addColorStop(0.5, '#cbd5e0');
-        stockGradient.addColorStop(1, '#4a5568');
+        // Steel (Default)
+         if (simState.spindleDirection === 'STOP') {
+            stockGradient.addColorStop(0, '#2d3748');
+            stockGradient.addColorStop(0.2, '#718096');
+            stockGradient.addColorStop(0.5, '#a0aec0');
+            stockGradient.addColorStop(0.8, '#718096');
+            stockGradient.addColorStop(1, '#2d3748');
+        } else {
+            stockGradient.addColorStop(0, '#4a5568');
+            stockGradient.addColorStop(0.5, '#cbd5e0');
+            stockGradient.addColorStop(1, '#4a5568');
+        }
     }
 
     ctx.fillStyle = stockGradient;
     ctx.fillRect(chuckX, centerY - (stockPixelDia/2), stockPixelLen, stockPixelDia/2);
     ctx.fillRect(chuckX, centerY, stockPixelLen, stockPixelDia/2);
+
+    // Carbon Fiber Weave Texture (Only when stopped or slow to simulate detail)
+    if (stockMaterial === 'Carbon Fiber' && simState.spindleDirection === 'STOP') {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+        // Draw a simple check pattern
+        for(let i=chuckX; i < chuckX + stockPixelLen; i+=6) {
+             for(let j=centerY - stockPixelDia/2; j < centerY + stockPixelDia/2; j+=6) {
+                 if ((i+j)%12 === 0) ctx.fillRect(i, j, 3, 3);
+             }
+        }
+    }
     
     const endX = chuckX + stockPixelLen;
-    ctx.fillStyle = '#718096';
+    let endColor = '#718096';
+    if(stockMaterial === 'Aluminum') endColor = '#cbd5e0';
+    if(stockMaterial === 'Wood') endColor = '#8d5a36';
+    if(stockMaterial === 'Carbon Fiber') endColor = '#1a1a1a';
+
+    ctx.fillStyle = endColor;
     ctx.fillRect(endX, centerY - (stockPixelDia/2), 2, stockPixelDia);
 
 
@@ -500,6 +636,27 @@ export const Simulator: React.FC<SimulatorProps> = ({ commands, machineState, cu
     // Origin dot
     ctx.beginPath(); ctx.fillStyle = '#fff'; ctx.arc(gizmoX, gizmoY, 3, 0, Math.PI*2); ctx.fill();
 
+    // --- Coolant Visual Effects ---
+    if (simState.coolant === 'FLOOD') {
+        // Draw blue streams
+        ctx.fillStyle = 'rgba(0, 100, 255, 0.1)';
+        ctx.fillRect(0, 0, width, height);
+        
+        ctx.strokeStyle = 'rgba(100, 200, 255, 0.2)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for(let k=0; k<width; k+=30) {
+             const offset = (Math.sin(time / 200 + k) * 5);
+             ctx.moveTo(k + offset, 0); 
+             ctx.lineTo(k - offset, height);
+        }
+        ctx.stroke();
+    } else if (simState.coolant === 'MIST') {
+        // Draw mist (white noise)
+        ctx.fillStyle = 'rgba(220, 230, 255, 0.08)';
+        ctx.fillRect(0, 0, width, height);
+    }
+
     // --- Spindle Status Indicator (Top Left) ---
     ctx.save();
     
@@ -507,44 +664,100 @@ export const Simulator: React.FC<SimulatorProps> = ({ commands, machineState, cu
     let statusColor = '#ef4444'; // Red
 
     if (simState.spindleDirection === 'CW') {
-        statusText = 'SPINDLE CW';
+        statusText = `CW ${simState.spindleSpeed} RPM`;
         statusColor = '#22c55e'; // Green
     } else if (simState.spindleDirection === 'CCW') {
-        statusText = 'SPINDLE CCW';
+        statusText = `CCW ${simState.spindleSpeed} RPM`;
         statusColor = '#eab308'; // Yellow
     }
 
     const indicatorX = 10;
     const indicatorY = 10;
-    const indicatorW = 120;
+    const indicatorW = 150;
     const indicatorH = 26;
 
-    // Box Background
+    // Spindle Box
     ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
     ctx.fillRect(indicatorX, indicatorY, indicatorW, indicatorH);
     ctx.lineWidth = 1;
     ctx.strokeStyle = '#333';
     ctx.strokeRect(indicatorX, indicatorY, indicatorW, indicatorH);
 
-    // Status Dot
+    // Spindle Status Dot
     ctx.beginPath();
     ctx.arc(indicatorX + 15, indicatorY + 13, 4, 0, Math.PI * 2);
     ctx.fillStyle = statusColor;
     ctx.fill();
-    // Glow
     if (simState.spindleDirection !== 'STOP') {
-        ctx.shadowColor = statusColor;
-        ctx.shadowBlur = 8;
-        ctx.fill();
-        ctx.shadowBlur = 0;
+        ctx.shadowColor = statusColor; ctx.shadowBlur = 8; ctx.fill(); ctx.shadowBlur = 0;
     }
 
-    // Text
     ctx.font = 'bold 12px monospace';
     ctx.fillStyle = '#fff';
     ctx.fillText(statusText, indicatorX + 28, indicatorY + 17);
 
+    // --- Coolant Status Indicator (Below Spindle) ---
+    const coolantY = indicatorY + indicatorH + 6;
+    let coolantText = 'COOLANT OFF';
+    let coolantColor = '#718096'; // Gray
+    
+    if (simState.coolant === 'MIST') {
+        coolantText = 'MIST ON (M07)';
+        coolantColor = '#a5b4fc'; // Light Indigo/White
+    } else if (simState.coolant === 'FLOOD') {
+        coolantText = 'FLOOD ON (M08)';
+        coolantColor = '#3b82f6'; // Blue
+    }
+
+    // Coolant Box
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.fillRect(indicatorX, coolantY, indicatorW, indicatorH);
+    ctx.strokeRect(indicatorX, coolantY, indicatorW, indicatorH);
+
+    // Coolant Status Dot
+    ctx.beginPath();
+    ctx.arc(indicatorX + 15, coolantY + 13, 4, 0, Math.PI * 2);
+    ctx.fillStyle = coolantColor;
+    ctx.fill();
+    if (simState.coolant !== 'OFF') {
+        ctx.shadowColor = coolantColor; ctx.shadowBlur = 8; ctx.fill(); ctx.shadowBlur = 0;
+    }
+
+    ctx.fillStyle = '#fff';
+    ctx.fillText(coolantText, indicatorX + 28, coolantY + 17);
+
     ctx.restore();
+
+    // --- Active Command Display (Bottom Center) ---
+    const activeCmd = commands[currentLine];
+    if (activeCmd) {
+        ctx.save();
+        const cmdText = activeCmd.raw.trim();
+        ctx.font = 'bold 14px "Share Tech Mono", monospace';
+        const tm = ctx.measureText(cmdText);
+        const pad = 16;
+        const bgW = tm.width + pad * 2;
+        const bgH = 30;
+        const bgX = (width / 2) - (bgW / 2);
+        const bgY = height - 60; // Just above bottom edge
+
+        // Glassy/CRT background
+        ctx.fillStyle = 'rgba(0, 10, 0, 0.85)';
+        ctx.fillRect(bgX, bgY, bgW, bgH);
+        
+        ctx.strokeStyle = '#00ff00';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(bgX, bgY, bgW, bgH);
+
+        // Text
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#00ff00';
+        ctx.shadowColor = 'rgba(0, 255, 0, 0.5)';
+        ctx.shadowBlur = 4;
+        ctx.fillText(cmdText, width / 2, bgY + (bgH/2) + 1);
+        ctx.restore();
+    }
 
     requestRef.current = requestAnimationFrame(animate);
   };
@@ -552,10 +765,23 @@ export const Simulator: React.FC<SimulatorProps> = ({ commands, machineState, cu
   useEffect(() => {
     requestRef.current = requestAnimationFrame(animate);
     return () => { if (requestRef.current) cancelAnimationFrame(requestRef.current); };
-  }, [simState, feedOverride]);
+  }, [simState, feedOverride, stockMaterial]); // Re-animate on material change
+
+  const handleConfirmTool = () => {
+    setPendingToolChange(null);
+    if (onRequestResume) onRequestResume();
+  };
+
+  const getToolInfo = (cmd: GCodeCommand) => {
+    if (!cmd.code) return null;
+    const toolIdStr = cmd.code.toString();
+    let id = parseInt(toolIdStr);
+    if (toolIdStr.length >= 2) id = parseInt(toolIdStr.substring(0, 2));
+    return TOOLS.find(t => t.id === id);
+  };
 
   return (
-    <div className="relative w-full h-full bg-cnc-950 rounded-lg overflow-hidden border border-cnc-700 shadow-2xl crt-screen">
+    <div className="relative w-full h-full bg-cnc-950 rounded-lg overflow-hidden border border-cnc-700 shadow-2xl crt-screen group">
         <canvas 
             ref={canvasRef} 
             width={800} 
@@ -566,6 +792,74 @@ export const Simulator: React.FC<SimulatorProps> = ({ commands, machineState, cu
         />
         <div className="crt-scanline"></div>
         
+        {/* Settings Overlay (Material, Spindle, E-STOP) */}
+        <div className="absolute top-4 right-4 flex flex-col gap-3 z-50">
+            {/* E-STOP BUTTON */}
+            <div className="flex justify-end mb-2">
+                <button
+                    onClick={() => {
+                        setManualSpindle({dir: 'STOP', speed: 0});
+                        onError("EMERGENCY STOP TRIGGERED");
+                    }}
+                    className="group relative flex items-center justify-center w-16 h-16 rounded-full bg-red-600 border-4 border-red-800 shadow-[0_0_20px_rgba(220,38,38,0.6)] hover:shadow-[0_0_30px_rgba(220,38,38,0.8)] active:scale-95 transition-all overflow-hidden"
+                    title="EMERGENCY STOP"
+                >
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.4),transparent)]"></div>
+                    <Octagon size={28} className="text-white animate-pulse" fill="currentColor" strokeWidth={3} />
+                    <span className="absolute text-[8px] font-black text-red-900 bottom-2 tracking-tighter">E-STOP</span>
+                </button>
+            </div>
+
+            {/* Material Selection */}
+            <div className="bg-black/80 backdrop-blur border border-zinc-700 p-2 rounded flex flex-col gap-1 shadow-xl">
+                <div className="flex items-center gap-2 text-xs font-bold text-zinc-400 mb-1 border-b border-zinc-700 pb-1">
+                    <Layers size={12} /> Stock Material
+                </div>
+                {(['Steel', 'Aluminum', 'Wood', 'Carbon Fiber'] as const).map(mat => (
+                    <button
+                        key={mat}
+                        onClick={() => setStockMaterial(mat)}
+                        className={`text-xs px-2 py-1 rounded text-left transition-colors ${stockMaterial === mat ? 'bg-cnc-accent text-black font-bold' : 'text-zinc-400 hover:bg-zinc-800 hover:text-white'}`}
+                    >
+                        {mat}
+                    </button>
+                ))}
+            </div>
+
+            {/* Manual Spindle Control */}
+            <div className="bg-black/80 backdrop-blur border border-zinc-700 p-2 rounded flex flex-col gap-1 shadow-xl">
+                 <div className="flex items-center gap-2 text-xs font-bold text-zinc-400 mb-2 border-b border-zinc-700 pb-1">
+                    <Settings2 size={12} /> Manual Spindle
+                </div>
+                <div className="flex gap-1 justify-between">
+                     <button
+                        title="M03 CW"
+                        onClick={() => setManualSpindle({dir: 'CW', speed: 1000})}
+                        className={`p-2 rounded transition-all ${manualSpindle.dir === 'CW' ? 'bg-green-600 text-white shadow-[0_0_8px_#16a34a]' : 'bg-zinc-800 text-zinc-400 hover:text-white'}`}
+                    >
+                        <RotateCw size={16} />
+                    </button>
+                    <button
+                        title="M05 STOP"
+                        onClick={() => setManualSpindle({dir: 'STOP', speed: 0})}
+                        className={`p-2 rounded transition-all ${manualSpindle.dir === 'STOP' ? 'bg-red-600 text-white shadow-[0_0_8px_#dc2626]' : 'bg-zinc-800 text-zinc-400 hover:text-white'}`}
+                    >
+                        <Ban size={16} />
+                    </button>
+                    <button
+                        title="M04 CCW"
+                        onClick={() => setManualSpindle({dir: 'CCW', speed: 1000})}
+                        className={`p-2 rounded transition-all ${manualSpindle.dir === 'CCW' ? 'bg-yellow-600 text-black shadow-[0_0_8px_#ca8a04]' : 'bg-zinc-800 text-zinc-400 hover:text-white'}`}
+                    >
+                        <RotateCcw size={16} />
+                    </button>
+                </div>
+                <div className="text-[10px] text-center text-zinc-500 font-mono mt-1">
+                    {manualSpindle.dir === 'STOP' ? 'STOPPED' : `${manualSpindle.dir} 1000`}
+                </div>
+            </div>
+        </div>
+
         {/* Tool Tip */}
         {tooltip && (
             <div 
@@ -573,9 +867,47 @@ export const Simulator: React.FC<SimulatorProps> = ({ commands, machineState, cu
                 className="absolute bg-zinc-900/95 border border-cnc-accent p-3 rounded shadow-2xl z-50 pointer-events-none text-xs backdrop-blur min-w-[150px]"
             >
                 <div className="font-bold text-cnc-accent text-sm mb-2 border-b border-zinc-700 pb-1">{tooltip.tool.name}</div>
-                <div className="text-zinc-400">
-                    <div>Holder: <span className="text-white">{tooltip.tool.holderType}</span></div>
-                    <div>Mat: <span className="text-white">{tooltip.tool.holderMaterial}</span></div>
+                <div className="text-zinc-400 space-y-1">
+                    <div className="flex justify-between">
+                        <span>Holder Mat:</span>
+                        <span className="text-white font-mono">{tooltip.tool.holderMaterial}</span>
+                    </div>
+                    <div className="flex justify-between">
+                        <span>Workpiece:</span>
+                        <span className="text-white font-mono">{stockMaterial}</span>
+                    </div>
+                    <div className="flex justify-between">
+                        <span>Insert Type:</span>
+                        <span className="text-white font-mono">{tooltip.tool.holderType}</span>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* Tool Change Prompt Overlay */}
+        {pendingToolChange && (
+            <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                <div className="bg-zinc-900 border-2 border-yellow-500 p-8 rounded shadow-2xl max-w-md w-full text-center relative animate-pulse-fast">
+                    <div className="absolute top-0 left-0 right-0 h-1 bg-yellow-500 shadow-[0_0_10px_#eab308]"></div>
+                    <AlertTriangle className="mx-auto text-yellow-500 mb-4 h-12 w-12" />
+                    <h3 className="text-xl font-bold text-yellow-500 tracking-widest mb-1">MANUAL ACTION REQUIRED</h3>
+                    <p className="text-zinc-400 text-sm mb-6 uppercase tracking-wide">Please confirm tool change to proceed</p>
+                    
+                    <div className="bg-black border border-zinc-800 p-4 mb-6 rounded text-left">
+                        <div className="text-xs text-zinc-500 font-mono mb-1">REQUESTED TOOL</div>
+                        <div className="text-2xl font-bold text-white font-mono flex justify-between items-end">
+                            <span>T{pendingToolChange.code}</span>
+                            <span className="text-sm text-cnc-accent mb-1">{getToolInfo(pendingToolChange)?.name.split('-')[1].trim()}</span>
+                        </div>
+                    </div>
+
+                    <button 
+                        onClick={handleConfirmTool}
+                        className="w-full bg-yellow-600 hover:bg-yellow-500 text-black font-bold py-3 px-6 rounded transition-all flex items-center justify-center gap-2"
+                    >
+                        <CheckCircle2 size={20} />
+                        CONFIRM & RESUME
+                    </button>
                 </div>
             </div>
         )}

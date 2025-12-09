@@ -24,7 +24,7 @@ export interface SimulationState {
   activeToolOffset: number; // Current Length Offset Value (G43/G44)
   toolRadiusComp: 'OFF' | 'LEFT' | 'RIGHT'; // G40/G41/G42 Status
   positioningMode: 'ABS' | 'INC'; // G90/G91 Status
-  coolant: boolean;
+  coolant: 'OFF' | 'MIST' | 'FLOOD';
   path: { x: number; z: number; type: 'cut' | 'rapid' }[];
 }
 

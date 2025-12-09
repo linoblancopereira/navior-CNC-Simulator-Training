@@ -16,7 +16,7 @@ export default function App() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [simState, setSimState] = useState<SimulationState>({
     x: 0, z: 0, feedRate: 0, spindleSpeed: 0, spindleDirection: 'STOP',
-    tool: 1, activeToolOffset: 0, toolRadiusComp: 'OFF', positioningMode: 'ABS', coolant: false, path: []
+    tool: 1, activeToolOffset: 0, toolRadiusComp: 'OFF', positioningMode: 'ABS', coolant: 'OFF', path: []
   });
 
   const currentLesson = LESSONS.find(l => l.id === currentLessonId) || LESSONS[0];
@@ -232,6 +232,8 @@ export default function App() {
                         feedOverride={feedOverride} 
                         onError={handleAlarm}
                         onStateChange={setSimState}
+                        onRequestPause={handlePause}
+                        onRequestResume={handlePlay}
                     />
                 </div>
                 <div className="h-48 shadow-lg">
