@@ -11,6 +11,7 @@ interface SimulatorProps {
   manualSpindle: {dir: 'CW' | 'CCW' | 'STOP', speed: number};
   tools: ToolConfig[];
   showPaths: boolean; 
+  showTrace: boolean;
   onError: (msg: string) => void;
   onStateChange?: (state: SimulationState) => void;
   onRequestPause?: () => void;
@@ -19,8 +20,8 @@ interface SimulatorProps {
 }
 
 interface Particle {
-  x: number;
-  y: number;
+  rx: number; // Relative X position (pixels) from Z-Zero
+  y: number;  // Absolute Y position (pixels)
   vx: number;
   vy: number;
   life: number;
@@ -29,7 +30,6 @@ interface Particle {
 
 const STOCK_DIAMETER = 100; // Increased to 100mm as requested
 const STOCK_LENGTH = 150; // mm
-const ORIGIN_X_OFFSET = 50; // Canvas pixels from right
 const SCALE = 3; // Pixels per mm
 
 const VALID_G_CODES = [0, 1, 2, 3, 4, 20, 21, 28, 32, 33, 40, 41, 42, 43, 44, 49, 50, 70, 71, 72, 73, 74, 75, 76, 90, 91, 96, 97, 98, 99];
@@ -43,6 +43,7 @@ export const Simulator: React.FC<SimulatorProps> = ({
   manualSpindle,
   tools,
   showPaths,
+  showTrace,
   onError, 
   onStateChange,
   onRequestPause,
@@ -56,6 +57,7 @@ export const Simulator: React.FC<SimulatorProps> = ({
   
   // Camera State
   const [viewMode, setViewMode] = useState<'SIDE' | 'FRONT' | 'ISO'>('SIDE');
+  const [originOffset, setOriginOffset] = useState(50); // Canvas pixels from right for Z=0
   
   // Particle Configuration State
   const [showSettings, setShowSettings] = useState(false);
@@ -125,6 +127,23 @@ export const Simulator: React.FC<SimulatorProps> = ({
         lastHandledToolLine.current = -1;
     }
   }, [machineState, currentLine]);
+
+  // Handle F9 Center Shortcut
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'F9') {
+            const canvas = canvasRef.current;
+            if (canvas) {
+                // Center the stock in the view
+                const stockPixelLen = STOCK_LENGTH * SCALE;
+                const newOffset = (canvas.width / 2) - (stockPixelLen / 2);
+                setOriginOffset(newOffset);
+            }
+        }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // 1. Interpreter Engine
   useEffect(() => {
@@ -296,7 +315,6 @@ export const Simulator: React.FC<SimulatorProps> = ({
 
     // Particle Generation (Only generate if cutting)
     if (isCutting && isMoving && simState.x <= STOCK_DIAMETER + 1) {
-        // ... (Particle generation logic preserved) ...
         let pColor1 = '#ffaa00';
         let pColor2 = '#ffff00';
         // Material colors
@@ -308,13 +326,13 @@ export const Simulator: React.FC<SimulatorProps> = ({
 
         // Use configurable density
         for(let i=0; i<particleConfig.density; i++) {
-            // Need z/x pixel in SIDE view coords for storage, will project later
-            const zZeroPixel = width - ORIGIN_X_OFFSET;
-            const toolZPixel = zZeroPixel + (simState.z * SCALE);
+            // Store Relative X (Machine Z-Axis pixels) and Absolute Y (Machine X-Axis pixels)
+            // Relative X = (simState.z * SCALE)
+            const rx = (simState.z * SCALE);
             const toolXPixel = centerY - ((simState.x / 2) * SCALE);
             
             particlesRef.current.push({
-                x: toolZPixel,
+                rx: rx,
                 y: toolXPixel,
                 vx: (Math.random() - 0.2) * 4,
                 vy: (Math.random() - 0.5) * 4,
@@ -327,7 +345,6 @@ export const Simulator: React.FC<SimulatorProps> = ({
         const currentTool = tools.find(t => t.id === simState.tool);
         let hardness = 1.0;
         if (stockMaterial === 'Aluminum') hardness = 0.5;
-        // ... (Hardness logic) ...
         if (stockMaterial === 'Carbon Fiber') hardness = 1.5;
 
         if (currentTool && currentTool.wear < 100) {
@@ -344,7 +361,7 @@ export const Simulator: React.FC<SimulatorProps> = ({
 
     // Update Particles
     particlesRef.current.forEach(p => {
-        p.x += p.vx;
+        p.rx += p.vx;
         p.y += p.vy;
         p.vy += 0.1;
         // Adjust decay based on lifespan config (Higher lifespan = slower decay)
@@ -380,7 +397,7 @@ export const Simulator: React.FC<SimulatorProps> = ({
   };
 
   const renderSideView = (ctx: CanvasRenderingContext2D, width: number, height: number, deltaTime: number) => {
-    const zZeroPixel = width - ORIGIN_X_OFFSET;
+    const zZeroPixel = width - originOffset;
     const centerY = height / 2;
     const stockPixelLen = STOCK_LENGTH * SCALE;
     const stockPixelDia = STOCK_DIAMETER * SCALE;
@@ -487,6 +504,30 @@ export const Simulator: React.FC<SimulatorProps> = ({
     }
     ctx.restore();
     
+    // --- Trace (Faint faint path history) ---
+    if (showTrace && simState.path.length > 0) {
+        ctx.lineWidth = 1; // Faint line
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)'; // Very subtle white
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        
+        // Start from initial
+        let lastX = 100; let lastZ = 50; 
+        
+        const startX = zZeroPixel + (lastZ * SCALE);
+        const startY = centerY - ((lastX / 2) * SCALE);
+        ctx.moveTo(startX, startY);
+
+        simState.path.forEach(p => {
+            const cx = zZeroPixel + (p.z * SCALE);
+            const cy = centerY - ((p.x / 2) * SCALE);
+            ctx.lineTo(cx, cy);
+            
+            lastX = p.x; lastZ = p.z;
+        });
+        ctx.stroke();
+    }
+
     // --- Paths ---
     if (showPaths && simState.path.length > 0) {
         ctx.lineWidth = 1.5;
@@ -522,8 +563,9 @@ export const Simulator: React.FC<SimulatorProps> = ({
     // --- Particles ---
     particlesRef.current.forEach(p => {
         ctx.globalAlpha = p.life; ctx.fillStyle = p.color;
-        // Use Configurable size
-        ctx.beginPath(); ctx.arc(p.x, p.y, particleConfig.size, 0, Math.PI*2); ctx.fill();
+        // Use Configurable size and relative position
+        const screenX = (width - originOffset) + p.rx;
+        ctx.beginPath(); ctx.arc(screenX, p.y, particleConfig.size, 0, Math.PI*2); ctx.fill();
         ctx.globalAlpha = 1.0;
     });
 
@@ -753,63 +795,215 @@ export const Simulator: React.FC<SimulatorProps> = ({
   };
 
   const drawToolGraphics = (ctx: CanvasRenderingContext2D) => {
-    // ... (Existing tool drawing logic extracted) ...
     const activeToolConfig = tools.find(t => t.id === simState.tool) || tools[0];
-    let holderColorStart = '#333'; let holderColorMid = '#444'; let holderColorEnd = '#222';
 
-    if (activeToolConfig.type === 'grooving') {
-        holderColorStart = '#1e3a8a'; holderColorMid = '#60a5fa'; holderColorEnd = '#172554';
-    } else if (activeToolConfig.type === 'threading') {
-        holderColorStart = '#991b1b'; holderColorMid = '#fca5a5'; holderColorEnd = '#450a0a';
-    } else {
-        holderColorStart = '#52525b'; holderColorMid = '#e4e4e7'; holderColorEnd = '#3f3f46';
-    }
-    
-    const createHolderGradient = (y1: number, y2: number) => {
-        const grad = ctx.createLinearGradient(0, y1, 0, y2);
-        grad.addColorStop(0, holderColorStart); grad.addColorStop(0.5, holderColorMid); grad.addColorStop(1, holderColorEnd);
+    // Helper for metallic gradients
+    const createMetalGradient = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, dark: string, light: string) => {
+        const grad = ctx.createLinearGradient(x, y, x, y + h);
+        grad.addColorStop(0, dark);
+        grad.addColorStop(0.2, light);
+        grad.addColorStop(0.5, dark);
+        grad.addColorStop(0.8, light);
+        grad.addColorStop(1, dark);
         return grad;
     };
-    let insertColor = activeToolConfig.color;
-    const wearFactor = activeToolConfig.wear / 100;
-    const wearRadiusMod = wearFactor * 3; 
 
-    // 1. Draw Turret Block
-    ctx.fillStyle = '#1a1a1a'; ctx.fillRect(50, -60, 80, 100); 
-    ctx.strokeStyle = '#333'; ctx.lineWidth = 1; ctx.strokeRect(50, -60, 80, 100);
-    ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(65, -40, 3, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(65, 30, 3, 0, Math.PI*2); ctx.fill();
+    // Helper for "Screw" head
+    const drawScrew = (x: number, y: number, r: number) => {
+        ctx.save();
+        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2);
+        const grad = ctx.createRadialGradient(x-r/3, y-r/3, r/4, x, y, r);
+        grad.addColorStop(0, '#71717a'); grad.addColorStop(1, '#18181b');
+        ctx.fillStyle = grad; ctx.fill();
+        // Hex socket
+        ctx.fillStyle = '#09090b';
+        ctx.beginPath();
+        for(let i=0; i<6; i++) {
+            const angle = (Math.PI/3)*i;
+            const sx = x + Math.cos(angle)*r*0.5;
+            const sy = y + Math.sin(angle)*r*0.5;
+            if(i===0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+        }
+        ctx.closePath(); ctx.fill();
+        ctx.restore();
+    };
 
-    // 2. Tool Holder
+    // Draw Turret Block (Background connection)
+    ctx.save();
+    
+    // Styles
+    const insertGold = activeToolConfig.wear > 50 ? '#b91c1c' : '#fbbf24'; // Red if worn
+    const insertDetail = activeToolConfig.wear > 50 ? '#7f1d1d' : '#d97706';
+    
+    // Calculate wear effect (0.0 to 1.0)
+    const wearRatio = activeToolConfig.wear / 100;
+
+    // 1. Turret Base (Abstracted)
+    const turretGrad = ctx.createLinearGradient(40, -80, 120, -80);
+    turretGrad.addColorStop(0, '#18181b'); turretGrad.addColorStop(0.5, '#27272a'); turretGrad.addColorStop(1, '#09090b');
+    ctx.fillStyle = turretGrad;
+    // Turret block relative to tip
+    ctx.beginPath();
+    ctx.roundRect(40, -70, 80, 120, 4); 
+    ctx.fill();
+    ctx.strokeStyle = '#3f3f46'; ctx.lineWidth = 1; ctx.stroke();
+    // Bolts on turret
+    drawScrew(55, -50, 6);
+    drawScrew(55, 30, 6);
+    drawScrew(100, -50, 6);
+    drawScrew(100, 30, 6);
+
+    // 2. Specific Tool Geometry
     if (activeToolConfig.type === 'grooving') {
-        const width = 4 * SCALE; const insertW = activeToolConfig.width * SCALE; const length = 45;
-        ctx.fillStyle = createHolderGradient(-35, 25); ctx.fillRect(20, -35, 50, 60);
-        ctx.fillStyle = holderColorStart; ctx.beginPath(); ctx.moveTo(5, -insertW); ctx.lineTo(5, -length); ctx.lineTo(20, -length); ctx.lineTo(20, -insertW); ctx.fill();
-        ctx.fillStyle = activeToolConfig.wear > 50 ? '#b91c1c' : insertColor;
-        if (activeToolConfig.wear > 10) { ctx.beginPath(); ctx.roundRect(0, -insertW, insertW, insertW, wearRadiusMod); ctx.fill(); } 
-        else { ctx.fillRect(0, -insertW, insertW, insertW); }
-        ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(35, -15, 4, 0, Math.PI*2); ctx.fill();
+        // --- GROOVING TOOL (MGEHR) ---
+        // Shank
+        const shankH = 25;
+        const shankY = -shankH/2 - 15; 
+        
+        ctx.fillStyle = createMetalGradient(ctx, 20, shankY, 80, shankH, '#333', '#666');
+        ctx.fillRect(20, shankY, 80, shankH); 
+        
+        // Blade support 
+        ctx.fillStyle = '#52525b';
+        ctx.beginPath();
+        ctx.moveTo(20, shankY + 5); 
+        ctx.lineTo(5, shankY + 5); 
+        ctx.lineTo(5, shankY + shankH - 5);
+        ctx.lineTo(20, shankY + shankH - 5);
+        ctx.fill();
+        
+        // Insert with Wear Erosion (Reduce width by up to 30%)
+        const originalW = activeToolConfig.width * SCALE; 
+        const effectiveW = originalW * (1 - (wearRatio * 0.3));
+        const erosion = (originalW - effectiveW) / 2;
+        
+        ctx.fillStyle = insertGold;
+        ctx.beginPath();
+        // Draw slightly narrower if worn
+        ctx.roundRect(0, -originalW/2 + erosion, 10, effectiveW, 1);
+        ctx.fill();
+        
+        // Visual 'hot' spot if very worn
+        if(activeToolConfig.wear > 50) {
+             ctx.fillStyle = 'rgba(255, 50, 0, 0.4)';
+             ctx.beginPath(); ctx.arc(0, 0, 3 + wearRatio * 2, 0, Math.PI*2); ctx.fill();
+        }
+
     } else if (activeToolConfig.type === 'threading') {
-        const shankH = 18;
-        ctx.fillStyle = createHolderGradient(-shankH, 0); ctx.fillRect(10, -shankH, 80, shankH); 
-        ctx.beginPath(); ctx.moveTo(10, -shankH); ctx.lineTo(0, -shankH + 2); ctx.lineTo(0, -2); ctx.lineTo(10, 0); ctx.fill();
-        ctx.fillStyle = activeToolConfig.wear > 50 ? '#b91c1c' : insertColor;
-        ctx.beginPath(); ctx.moveTo(0 + wearRadiusMod, 0); ctx.lineTo(5, -3); ctx.lineTo(5, 0); ctx.closePath(); ctx.fill();
-        ctx.fillStyle = '#000'; ctx.fillRect(5, -shankH + 4, 4, 4);
+        // --- THREADING TOOL (SER) ---
+        // Shank
+        const shankH = 25;
+        const shankY = -shankH - 5;
+        
+        ctx.fillStyle = createMetalGradient(ctx, 15, shankY, 90, shankH, '#333', '#555');
+        ctx.fillRect(15, shankY, 90, shankH);
+        
+        // Head
+        ctx.beginPath();
+        ctx.moveTo(15, shankY + shankH);
+        ctx.lineTo(5, shankY + shankH + 10); 
+        ctx.lineTo(25, shankY + shankH + 10);
+        ctx.lineTo(35, shankY + shankH);
+        ctx.fillStyle = '#3f3f46';
+        ctx.fill();
+
+        // Insert
+        ctx.fillStyle = insertGold;
+        ctx.beginPath();
+        
+        // Simulate nose radius increase with wear (rounding the sharp tip)
+        if (wearRatio > 0.1) {
+             // Worn tip (Rounded)
+             ctx.arc(2 * wearRatio, 0, 2 * wearRatio, Math.PI/2, -Math.PI/2, true); // Tip arc
+             ctx.lineTo(8, -4);
+             ctx.lineTo(8, 4);
+        } else {
+             // Sharp tip
+             ctx.moveTo(0, 0); 
+             ctx.lineTo(8, -4);
+             ctx.lineTo(8, 4);
+        }
+        ctx.closePath();
+        ctx.fill();
+        
+        // Chip breaker detail
+        ctx.fillStyle = insertDetail;
+        ctx.beginPath(); ctx.arc(5, 0, 1.5, 0, Math.PI*2); ctx.fill();
+        drawScrew(15, -5, 3);
+
     } else {
-        ctx.fillStyle = createHolderGradient(-25, 0); ctx.fillRect(10, -25, 100, 25); 
-        ctx.fillStyle = activeToolConfig.wear > 50 ? '#b91c1c' : insertColor;
-        ctx.beginPath(); ctx.moveTo(0 + wearRadiusMod, 0); ctx.lineTo(5, -8); ctx.lineTo(15, -8); ctx.lineTo(10, 0); ctx.fill();
-        ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(12, -8, 3, 0, Math.PI*2); ctx.fill();
+        // --- GENERAL TURNING (DCLNR / CNMG) ---
+        // Shank
+        const shankH = 30;
+        const shankY = -shankH - 2; 
+        
+        // Main Body
+        ctx.fillStyle = createMetalGradient(ctx, 10, shankY, 100, shankH, '#18181b', '#3f3f46');
+        ctx.fillRect(10, shankY, 100, shankH);
+        
+        // Head / Seat
+        ctx.fillStyle = '#27272a';
+        ctx.beginPath();
+        ctx.moveTo(10, shankY + shankH); 
+        ctx.lineTo(0, shankY + shankH + 8); 
+        ctx.lineTo(20, shankY + shankH + 8);
+        ctx.lineTo(25, shankY + shankH);
+        ctx.fill();
+
+        // Insert
+        ctx.fillStyle = insertGold;
+        ctx.beginPath();
+        
+        // Simulate nose radius increasing (tip breakdown)
+        const wearRadius = wearRatio * 4; // Up to 4px radius increase
+        if (wearRadius > 0.5) {
+             ctx.arc(2 + wearRadius, 1.5 + wearRadius, wearRadius, Math.PI, 1.5 * Math.PI); // Rounded corner
+             ctx.lineTo(12, -2);
+             ctx.lineTo(12, 5); 
+             ctx.lineTo(2 + wearRadius, 6); // Adjusted bottom
+        } else {
+             ctx.moveTo(0, 0);
+             ctx.lineTo(12, -2);
+             ctx.lineTo(12, 5); 
+             ctx.lineTo(2, 6);
+        }
+        ctx.closePath();
+        ctx.fill();
+        
+        // Chip Breaker 3D effect
+        const grad = ctx.createRadialGradient(4, 2, 0, 4, 2, 5);
+        grad.addColorStop(0, insertDetail); grad.addColorStop(1, insertGold);
+        ctx.fillStyle = grad;
+        ctx.beginPath(); ctx.arc(5, 1.5, 2.5, 0, Math.PI*2); ctx.fill();
+
+        // Top Clamp 
+        ctx.fillStyle = '#52525b';
+        ctx.beginPath();
+        ctx.moveTo(5, -2);
+        ctx.lineTo(15, -5);
+        ctx.lineTo(15, -15);
+        ctx.lineTo(25, -15);
+        ctx.lineTo(25, -2);
+        ctx.fill();
+        drawScrew(20, -10, 3);
     }
-    // Tool Label
-    ctx.shadowBlur = 0; ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.font = 'bold 10px monospace';
-    ctx.fillText(activeToolConfig.name.split(' - ')[0], 55, -45);
+
+    // Label on Shank
+    ctx.save();
+    ctx.translate(45, -35);
+    ctx.rotate(0);
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.font = '8px monospace';
+    ctx.fillText(activeToolConfig.holderType || 'TOOL', 0, 0);
+    ctx.restore();
+
+    ctx.restore();
   };
 
   useEffect(() => {
     requestRef.current = requestAnimationFrame(animate);
     return () => { if (requestRef.current) cancelAnimationFrame(requestRef.current); };
-  }, [simState, feedOverride, stockMaterial, tools, showPaths, viewMode, particleConfig]); 
+  }, [simState, feedOverride, stockMaterial, tools, showPaths, showTrace, viewMode, particleConfig, originOffset]); 
 
   const handleConfirmTool = () => {
     setPendingToolChange(null);

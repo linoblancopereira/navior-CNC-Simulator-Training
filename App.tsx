@@ -6,7 +6,7 @@ import { Simulator } from './components/Simulator';
 import { GeminiTutor } from './components/GeminiTutor';
 import { CadImporter } from './components/CadImporter';
 import { MachineState, SimulationState, MaterialType, ToolConfig } from './types';
-import { Play, Pause, RotateCcw, RotateCw, Layout, Gauge, AlertTriangle, XCircle, Terminal, Layers, Octagon, Ban, Droplets, Ruler, Settings, Wrench, RefreshCw, CloudDownload, Edit3, Link2, Crosshair } from 'lucide-react';
+import { Play, Pause, RotateCcw, RotateCw, Layout, Gauge, AlertTriangle, XCircle, Terminal, Layers, Octagon, Ban, Droplets, Ruler, Settings, Wrench, RefreshCw, CloudDownload, Edit3, Link2, Crosshair, PenTool } from 'lucide-react';
 
 const ShortcutButton = ({ k, label, icon, onClick }: { k: string, label: string, icon: React.ReactNode, onClick: () => void }) => (
     <button onClick={onClick} className="flex flex-col items-center justify-center p-2 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors group relative min-w-[60px]">
@@ -29,6 +29,7 @@ export default function App() {
 
   // Aspire Simulation States
   const [showPaths, setShowPaths] = useState(true);
+  const [showTrace, setShowTrace] = useState(false);
   const [aspireToast, setAspireToast] = useState<string | null>(null);
 
   // Tool State Management (Dynamic Wear)
@@ -66,7 +67,12 @@ export default function App() {
         if (e.key === 'F11' || e.key === 'F12') {
             e.preventDefault();
             setShowPaths(prev => !prev);
-            showToast(e.key === 'F11' ? "Vista: Dibujo 2D" : "Vista: Trayectorias");
+            showToast(showPaths ? "Vista: Dibujo 2D" : "Vista: Trayectorias");
+        }
+        if (e.key === 'F10') {
+            e.preventDefault();
+            setShowTrace(prev => !prev);
+            showToast("Vista: Trazo Histórico");
         }
         if (e.key === 'n' || e.key === 'N') {
             showToast("Modo: Edición de Nodos");
@@ -482,6 +488,7 @@ export default function App() {
                 {/* Aspire Toolbar - Inserted above Simulator */}
                 <div className="flex gap-2 mb-0 overflow-x-auto pb-1 bg-black/40 p-2 rounded border border-zinc-800 backdrop-blur-sm">
                     <ShortcutButton k="F11/F12" label="Vista" icon={<Layers size={14}/>} onClick={() => { setShowPaths(!showPaths); showToast(showPaths ? "Vista: Dibujo 2D" : "Vista: Trayectorias"); }} />
+                    <ShortcutButton k="F10" label="Trazo" icon={<PenTool size={14}/>} onClick={() => { setShowTrace(!showTrace); showToast(!showTrace ? "Vista: Trazo Histórico" : "Vista: Trazo Oculto"); }} />
                     <ShortcutButton k="N" label="Edición Nodos" icon={<Edit3 size={14}/>} onClick={() => showToast("Modo: Edición de Nodos")} />
                     <ShortcutButton k="J" label="Unir" icon={<Link2 size={14}/>} onClick={() => showToast("Acción: Unir Vectores")} />
                     <ShortcutButton k="F9" label="Centrar" icon={<Crosshair size={14}/>} onClick={() => showToast("Acción: Centrar en Material")} />
@@ -505,6 +512,7 @@ export default function App() {
                         tools={tools}
                         onToolWear={updateToolWear}
                         showPaths={showPaths}
+                        showTrace={showTrace}
                     />
                 </div>
                 <div className="h-48 shadow-lg">
