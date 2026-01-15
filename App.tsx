@@ -198,7 +198,7 @@ export default function App() {
       <aside className="w-64 bg-zinc-900/80 backdrop-blur-sm border-r border-zinc-800 flex flex-col z-10">
         <div className="p-4 border-b border-zinc-800 flex items-center gap-2 bg-gradient-to-r from-zinc-900 to-zinc-800">
             <div className="bg-cnc-accent text-black p-1 rounded"><Layout size={18} /></div>
-            <h1 className="font-bold text-lg tracking-wider text-white">NAVIOR CNC</h1>
+            <h1 className="font-bold text-lg tracking-wider text-white">A CNC DE LINO</h1>
         </div>
         
         <div className="flex-1 overflow-y-auto p-2">

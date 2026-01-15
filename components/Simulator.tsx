@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Video, Monitor, Box, Circle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Video, Monitor, Box, Circle, RotateCw, RotateCcw, Octagon, Sliders, Sparkles } from 'lucide-react';
 import { GCodeCommand, SimulationState, MachineState, ToolConfig, MaterialType } from '../types';
 
 interface SimulatorProps {
@@ -27,7 +27,7 @@ interface Particle {
   color: string;
 }
 
-const STOCK_DIAMETER = 80; // mm
+const STOCK_DIAMETER = 100; // Increased to 100mm as requested
 const STOCK_LENGTH = 150; // mm
 const ORIGIN_X_OFFSET = 50; // Canvas pixels from right
 const SCALE = 3; // Pixels per mm
@@ -56,6 +56,14 @@ export const Simulator: React.FC<SimulatorProps> = ({
   
   // Camera State
   const [viewMode, setViewMode] = useState<'SIDE' | 'FRONT' | 'ISO'>('SIDE');
+  
+  // Particle Configuration State
+  const [showSettings, setShowSettings] = useState(false);
+  const [particleConfig, setParticleConfig] = useState({
+    density: 3,   // Particles per frame
+    size: 1.5,    // Radius in pixels
+    lifespan: 1.0 // Multiplier (1.0 = normal decay)
+  });
   
   // Animation Physics Refs
   const lastTimeRef = useRef<number>(0);
@@ -298,7 +306,8 @@ export const Simulator: React.FC<SimulatorProps> = ({
         else if (stockMaterial === 'Epoxi') { pColor1 = '#fef08a'; pColor2 = '#facc15'; }
         else if (stockMaterial === 'POM') { pColor1 = '#f8fafc'; pColor2 = '#cbd5e1'; }
 
-        for(let i=0; i<3; i++) {
+        // Use configurable density
+        for(let i=0; i<particleConfig.density; i++) {
             // Need z/x pixel in SIDE view coords for storage, will project later
             const zZeroPixel = width - ORIGIN_X_OFFSET;
             const toolZPixel = zZeroPixel + (simState.z * SCALE);
@@ -338,7 +347,8 @@ export const Simulator: React.FC<SimulatorProps> = ({
         p.x += p.vx;
         p.y += p.vy;
         p.vy += 0.1;
-        p.life -= 0.05;
+        // Adjust decay based on lifespan config (Higher lifespan = slower decay)
+        p.life -= 0.05 / particleConfig.lifespan;
     });
     particlesRef.current = particlesRef.current.filter(p => p.life > 0);
     
@@ -390,39 +400,92 @@ export const Simulator: React.FC<SimulatorProps> = ({
     ctx.beginPath(); ctx.moveTo(0, centerY); ctx.lineTo(width, centerY); ctx.stroke();
     ctx.setLineDash([]);
 
-    // --- Chuck ---
-    const chuckBodyDia = 160;
-    const chuckXPosition = chuckX - 10;
+    // --- Chuck (Redesigned: Smaller & Metallic) ---
+    const chuckBodyDia = 90; // Smaller size (was 160)
+    const chuckXPosition = chuckX - 5; // Closer fit
     ctx.save();
     ctx.translate(chuckXPosition, centerY);
     
+    // Spindle Body (Silver/Metallic)
     const bodyGrad = ctx.createLinearGradient(0, -chuckBodyDia/2, 0, chuckBodyDia/2);
-    bodyGrad.addColorStop(0, '#27272a'); bodyGrad.addColorStop(0.5, '#71717a'); bodyGrad.addColorStop(1, '#27272a');
-    ctx.fillStyle = bodyGrad;
-    ctx.fillRect(-60, -chuckBodyDia/2, 60, chuckBodyDia);
+    bodyGrad.addColorStop(0, '#52525b'); 
+    bodyGrad.addColorStop(0.2, '#a1a1aa'); 
+    bodyGrad.addColorStop(0.5, '#e4e4e7'); // Highlight
+    bodyGrad.addColorStop(0.8, '#a1a1aa'); 
+    bodyGrad.addColorStop(1, '#52525b');
     
-    ctx.beginPath(); ctx.rect(-10, -chuckBodyDia/2, 40, chuckBodyDia); ctx.clip();
-    const jawHeight = 25; const jawWidth = 30;
+    ctx.fillStyle = bodyGrad;
+    // Main chuck body
+    ctx.beginPath();
+    ctx.roundRect(-40, -chuckBodyDia/2, 40, chuckBodyDia, 4);
+    ctx.fill();
+    ctx.strokeStyle = '#3f3f46'; ctx.stroke();
+
+    // Chuck Face Detail
+    ctx.fillStyle = '#27272a';
+    ctx.fillRect(-5, -chuckBodyDia/2 + 5, 5, chuckBodyDia - 10);
+
+    // Jaws (Visualizing rotation)
+    const jawHeight = 20; const jawWidth = 25;
+    ctx.beginPath(); ctx.rect(0, -chuckBodyDia/2, 30, chuckBodyDia); ctx.clip(); // Clip jaws to front area
+    
     for(let j=0; j<3; j++) {
         const angleOffset = (Math.PI * 2 / 3) * j;
         const currentAngle = rotationRef.current + angleOffset;
-        const radius = chuckBodyDia / 3.5;
+        // Projection for side view
+        const radius = chuckBodyDia / 2.8;
         const jawY = Math.sin(currentAngle) * radius;
         const jawZ = Math.cos(currentAngle); 
         const isFront = jawZ > 0;
-        ctx.fillStyle = isFront ? '#d4d4d8' : '#52525b'; 
+        
+        // Jaw Gradient
+        const jawGrad = ctx.createLinearGradient(0, jawY - 10, 0, jawY + 10);
+        jawGrad.addColorStop(0, '#3f3f46'); jawGrad.addColorStop(0.5, '#71717a'); jawGrad.addColorStop(1, '#3f3f46');
+        
+        ctx.fillStyle = jawGrad;
         ctx.strokeStyle = '#18181b'; ctx.lineWidth = 1;
+        
+        // Draw Jaw
         ctx.fillRect(-5, jawY - (jawHeight/2), jawWidth, jawHeight);
         ctx.strokeRect(-5, jawY - (jawHeight/2), jawWidth, jawHeight);
+        
+        // Jaw Steps detail
+        ctx.fillStyle = '#18181b';
+        ctx.fillRect(5, jawY - 5, 10, 10);
     }
     ctx.restore();
 
-    // --- Stock ---
-    const stockGradient = ctx.createLinearGradient(0, centerY - (stockPixelDia/2), 0, centerY + (stockPixelDia/2));
-    configureStockGradient(stockGradient); // Helper
-    ctx.fillStyle = stockGradient;
-    ctx.fillRect(chuckX, centerY - (stockPixelDia/2), stockPixelLen, stockPixelDia/2);
-    ctx.fillRect(chuckX, centerY, stockPixelLen, stockPixelDia/2);
+    // --- Stock with Textures ---
+    ctx.save();
+    // Clip to stock area
+    ctx.beginPath();
+    ctx.rect(chuckX, centerY - (stockPixelDia/2), stockPixelLen, stockPixelDia);
+    ctx.clip();
+    
+    // Draw Base Texture
+    drawMaterialTexture(ctx, chuckX, centerY - (stockPixelDia/2), stockPixelLen, stockPixelDia, stockMaterial, 'SIDE');
+
+    // Draw Cylindrical Lighting Overlay (Shadows top/bottom, highlight middle)
+    const lightGrad = ctx.createLinearGradient(0, centerY - (stockPixelDia/2), 0, centerY + (stockPixelDia/2));
+    lightGrad.addColorStop(0, 'rgba(0,0,0,0.6)');
+    lightGrad.addColorStop(0.3, 'rgba(0,0,0,0.1)');
+    lightGrad.addColorStop(0.4, 'rgba(255,255,255,0.2)'); // Specular highlight
+    lightGrad.addColorStop(0.5, 'rgba(255,255,255,0.0)');
+    lightGrad.addColorStop(0.8, 'rgba(0,0,0,0.3)');
+    lightGrad.addColorStop(1, 'rgba(0,0,0,0.7)');
+    
+    ctx.fillStyle = lightGrad;
+    ctx.fillRect(chuckX, centerY - (stockPixelDia/2), stockPixelLen, stockPixelDia);
+    
+    // Rotation Blur lines if moving
+    if (simState.spindleDirection !== 'STOP') {
+        ctx.fillStyle = 'rgba(255,255,255,0.05)';
+        for(let i=0; i<5; i++) {
+             const y = centerY - (stockPixelDia/2) + Math.random() * stockPixelDia;
+             ctx.fillRect(chuckX, y, stockPixelLen, 1);
+        }
+    }
+    ctx.restore();
     
     // --- Paths ---
     if (showPaths && simState.path.length > 0) {
@@ -459,7 +522,8 @@ export const Simulator: React.FC<SimulatorProps> = ({
     // --- Particles ---
     particlesRef.current.forEach(p => {
         ctx.globalAlpha = p.life; ctx.fillStyle = p.color;
-        ctx.beginPath(); ctx.arc(p.x, p.y, 1.5, 0, Math.PI*2); ctx.fill();
+        // Use Configurable size
+        ctx.beginPath(); ctx.arc(p.x, p.y, particleConfig.size, 0, Math.PI*2); ctx.fill();
         ctx.globalAlpha = 1.0;
     });
 
@@ -499,11 +563,16 @@ export const Simulator: React.FC<SimulatorProps> = ({
       ctx.moveTo(cx, cy - 200); ctx.lineTo(cx, cy + 200);
       ctx.stroke();
 
-      // Chuck Face
-      const chuckRad = 100;
-      ctx.fillStyle = '#27272a';
+      // Chuck Face (Redesigned)
+      const chuckRad = 60; // Reduced size
+      const faceGrad = ctx.createRadialGradient(cx, cy, 20, cx, cy, chuckRad);
+      faceGrad.addColorStop(0, '#e4e4e7');
+      faceGrad.addColorStop(0.8, '#71717a');
+      faceGrad.addColorStop(1, '#3f3f46');
+      
+      ctx.fillStyle = faceGrad;
       ctx.beginPath(); ctx.arc(cx, cy, chuckRad, 0, Math.PI*2); ctx.fill();
-      ctx.strokeStyle = '#3f3f46'; ctx.stroke();
+      ctx.strokeStyle = '#27272a'; ctx.lineWidth = 2; ctx.stroke();
 
       // Jaws
       for(let j=0; j<3; j++) {
@@ -511,20 +580,36 @@ export const Simulator: React.FC<SimulatorProps> = ({
         ctx.save();
         ctx.translate(cx, cy);
         ctx.rotate(angle);
-        ctx.fillStyle = '#52525b';
-        ctx.fillRect(stockRadius + 5, -15, 40, 30);
+        ctx.fillStyle = '#27272a';
+        // Jaw extends out
+        ctx.fillRect(stockRadius + 5, -10, 25, 20);
+        
+        // Bolt holes in chuck
+        ctx.fillStyle = '#18181b';
+        ctx.beginPath(); ctx.arc(chuckRad - 15, 0, 4, 0, Math.PI*2); ctx.fill();
         ctx.restore();
       }
 
-      // Stock Face
-      const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, stockRadius);
-      // Simplify stock color for radial
-      if (stockMaterial === 'Wood') { grad.addColorStop(0, '#8d5a36'); grad.addColorStop(1, '#3f2c22'); }
-      else if (stockMaterial === 'Aluminum') { grad.addColorStop(0, '#ffffff'); grad.addColorStop(1, '#a0aec0'); }
-      else { grad.addColorStop(0, '#4a5568'); grad.addColorStop(1, '#1a202c'); }
+      // Stock Face with Texture
+      ctx.save();
+      ctx.beginPath(); ctx.arc(cx, cy, stockRadius, 0, Math.PI*2); ctx.clip();
+      drawMaterialTexture(ctx, cx - stockRadius, cy - stockRadius, stockRadius*2, stockRadius*2, stockMaterial, 'FACE');
       
-      ctx.fillStyle = grad;
-      ctx.beginPath(); ctx.arc(cx, cy, stockRadius, 0, Math.PI*2); ctx.fill();
+      // Radial Shadow for roundness
+      const radShadow = ctx.createRadialGradient(cx, cy, stockRadius * 0.7, cx, cy, stockRadius);
+      radShadow.addColorStop(0, 'rgba(0,0,0,0)');
+      radShadow.addColorStop(1, 'rgba(0,0,0,0.5)');
+      ctx.fillStyle = radShadow;
+      ctx.fill();
+      
+      // Center turning mark
+      if (simState.spindleDirection !== 'STOP') {
+         ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+         ctx.beginPath(); ctx.arc(cx, cy, stockRadius * 0.5, 0, Math.PI*2); ctx.stroke();
+         ctx.beginPath(); ctx.arc(cx, cy, stockRadius * 0.8, 0, Math.PI*2); ctx.stroke();
+      }
+
+      ctx.restore();
 
       // Tool (Radial Position)
       // Tool X is Diameter. Distance from center = X/2
@@ -545,6 +630,80 @@ export const Simulator: React.FC<SimulatorProps> = ({
       ctx.moveTo(0,0); ctx.lineTo(-10, -20); ctx.lineTo(10, -20); ctx.fill();
       ctx.fillStyle = '#333';
       ctx.fillRect(-15, -60, 30, 40); // Holder body
+      ctx.restore();
+  };
+
+  const drawMaterialTexture = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, mat: MaterialType, view: 'SIDE' | 'FACE') => {
+      // Background base color
+      switch(mat) {
+          case 'Wood': ctx.fillStyle = '#8d5a36'; break;
+          case 'Aluminum': ctx.fillStyle = '#d1d5db'; break;
+          case 'Steel': ctx.fillStyle = '#64748b'; break;
+          case 'Carbon Fiber': ctx.fillStyle = '#18181b'; break;
+          case 'Epoxi': ctx.fillStyle = '#d97706'; break; // Amber
+          case 'POM': ctx.fillStyle = '#f1f5f9'; break;
+          default: ctx.fillStyle = '#9ca3af';
+      }
+      ctx.fillRect(x, y, w, h);
+
+      ctx.save();
+      // Apply texture details
+      if (mat === 'Wood') {
+          ctx.strokeStyle = '#5c3a2e';
+          ctx.lineWidth = 1.5;
+          ctx.globalAlpha = 0.4;
+          if (view === 'SIDE') {
+              // Grain lines
+              for (let i = 0; i < h; i += 8) {
+                  ctx.beginPath();
+                  ctx.moveTo(x, y + i);
+                  ctx.bezierCurveTo(x + w/3, y + i + Math.random()*5, x + 2*w/3, y + i - Math.random()*5, x + w, y + i);
+                  ctx.stroke();
+              }
+          } else {
+              // End grain rings
+              for(let r=5; r<w/2; r+=5) {
+                 ctx.beginPath(); ctx.arc(x+w/2, y+h/2, r + Math.random(), 0, Math.PI*2); ctx.stroke();
+              }
+          }
+      } 
+      else if (mat === 'Aluminum' || mat === 'Steel') {
+          // Noise / Brushed look
+          ctx.fillStyle = (mat === 'Aluminum') ? '#fff' : '#94a3b8';
+          ctx.globalAlpha = 0.15;
+          if (view === 'SIDE') {
+             for(let i=0; i<300; i++) {
+                 ctx.fillRect(x + Math.random()*w, y + Math.random()*h, Math.random()*20, 1);
+             }
+          } else {
+              // Circular scratch marks
+              ctx.strokeStyle = '#fff';
+              for(let i=0; i<30; i++) {
+                  ctx.beginPath(); ctx.arc(x+w/2, y+h/2, Math.random()*(w/2), 0, Math.PI*2); ctx.stroke();
+              }
+          }
+      }
+      else if (mat === 'Carbon Fiber') {
+          // Weave pattern
+          ctx.fillStyle = '#3f3f46';
+          ctx.globalAlpha = 0.5;
+          const size = 6;
+          for(let i=0; i<w; i+=size) {
+              for(let j=0; j<h; j+=size) {
+                  if ((Math.floor(i/size) + Math.floor(j/size)) % 2 === 0) {
+                      ctx.fillRect(x+i, y+j, size, size);
+                  }
+              }
+          }
+      }
+      else if (mat === 'Epoxi') {
+          // Bubbles / Translucent look
+          ctx.fillStyle = '#fcd34d';
+          ctx.globalAlpha = 0.3;
+          for(let i=0; i<20; i++) {
+              ctx.beginPath(); ctx.arc(x + Math.random()*w, y + Math.random()*h, Math.random()*2, 0, Math.PI*2); ctx.fill();
+          }
+      }
       ctx.restore();
   };
 
@@ -647,32 +806,10 @@ export const Simulator: React.FC<SimulatorProps> = ({
     ctx.fillText(activeToolConfig.name.split(' - ')[0], 55, -45);
   };
 
-  const configureStockGradient = (grad: CanvasGradient) => {
-    if (stockMaterial === 'Wood') {
-        if (simState.spindleDirection === 'STOP') { grad.addColorStop(0, '#3f2c22'); grad.addColorStop(0.4, '#8d5a36'); grad.addColorStop(0.6, '#a67c52'); grad.addColorStop(1, '#3f2c22'); } 
-        else { grad.addColorStop(0, '#5c3a2e'); grad.addColorStop(0.5, '#d4a373'); grad.addColorStop(1, '#5c3a2e'); }
-    } else if (stockMaterial === 'Aluminum') {
-         if (simState.spindleDirection === 'STOP') { grad.addColorStop(0, '#718096'); grad.addColorStop(0.3, '#e2e8f0'); grad.addColorStop(0.5, '#edf2f7'); grad.addColorStop(0.7, '#e2e8f0'); grad.addColorStop(1, '#718096'); } 
-         else { grad.addColorStop(0, '#a0aec0'); grad.addColorStop(0.5, '#ffffff'); grad.addColorStop(1, '#a0aec0'); }
-    } else if (stockMaterial === 'Carbon Fiber') {
-        if (simState.spindleDirection === 'STOP') { grad.addColorStop(0, '#0a0a0a'); grad.addColorStop(0.3, '#1f1f1f'); grad.addColorStop(0.5, '#2e2e2e'); grad.addColorStop(0.7, '#1f1f1f'); grad.addColorStop(1, '#0a0a0a'); } 
-        else { grad.addColorStop(0, '#111'); grad.addColorStop(0.5, '#333'); grad.addColorStop(1, '#111'); }
-    } else if (stockMaterial === 'Epoxi') {
-        if (simState.spindleDirection === 'STOP') { grad.addColorStop(0, '#854d0e'); grad.addColorStop(0.3, '#eab308'); grad.addColorStop(0.5, '#fef08a'); grad.addColorStop(0.7, '#eab308'); grad.addColorStop(1, '#854d0e'); } 
-        else { grad.addColorStop(0, '#ca8a04'); grad.addColorStop(0.5, '#fef9c3'); grad.addColorStop(1, '#ca8a04'); }
-    } else if (stockMaterial === 'POM') {
-        if (simState.spindleDirection === 'STOP') { grad.addColorStop(0, '#94a3b8'); grad.addColorStop(0.2, '#e2e8f0'); grad.addColorStop(0.5, '#f8fafc'); grad.addColorStop(0.8, '#e2e8f0'); grad.addColorStop(1, '#94a3b8'); } 
-        else { grad.addColorStop(0, '#cbd5e1'); grad.addColorStop(0.5, '#ffffff'); grad.addColorStop(1, '#cbd5e1'); }
-    } else {
-         if (simState.spindleDirection === 'STOP') { grad.addColorStop(0, '#2d3748'); grad.addColorStop(0.2, '#718096'); grad.addColorStop(0.5, '#a0aec0'); grad.addColorStop(0.8, '#718096'); grad.addColorStop(1, '#2d3748'); } 
-         else { grad.addColorStop(0, '#4a5568'); grad.addColorStop(0.5, '#cbd5e0'); grad.addColorStop(1, '#4a5568'); }
-    }
-  };
-
   useEffect(() => {
     requestRef.current = requestAnimationFrame(animate);
     return () => { if (requestRef.current) cancelAnimationFrame(requestRef.current); };
-  }, [simState, feedOverride, stockMaterial, tools, showPaths, viewMode]); 
+  }, [simState, feedOverride, stockMaterial, tools, showPaths, viewMode, particleConfig]); 
 
   const handleConfirmTool = () => {
     setPendingToolChange(null);
@@ -699,29 +836,115 @@ export const Simulator: React.FC<SimulatorProps> = ({
         />
         <div className="crt-scanline"></div>
         
-        {/* Camera Control Panel */}
-        <div className="absolute top-4 right-4 flex flex-col gap-1 bg-zinc-900/80 backdrop-blur border border-zinc-700 p-1.5 rounded-lg z-20">
-            <button 
-                onClick={() => setViewMode('SIDE')}
-                className={`p-2 rounded flex items-center gap-2 text-xs font-bold transition-all ${viewMode === 'SIDE' ? 'bg-cnc-accent text-black shadow-lg' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
-                title="Vista Lateral (XZ)"
-            >
-                <Monitor size={16} /> <span className="hidden sm:inline">LATERAL</span>
-            </button>
-            <button 
-                onClick={() => setViewMode('FRONT')}
-                className={`p-2 rounded flex items-center gap-2 text-xs font-bold transition-all ${viewMode === 'FRONT' ? 'bg-cnc-accent text-black shadow-lg' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
-                title="Vista Frontal (XY)"
-            >
-                <Circle size={16} /> <span className="hidden sm:inline">FRONTAL</span>
-            </button>
-            <button 
-                onClick={() => setViewMode('ISO')}
-                className={`p-2 rounded flex items-center gap-2 text-xs font-bold transition-all ${viewMode === 'ISO' ? 'bg-cnc-accent text-black shadow-lg' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
-                title="Vista Isométrica Simulada"
-            >
-                <Box size={16} /> <span className="hidden sm:inline">ISO</span>
-            </button>
+        {/* Spindle Status HUD */}
+        <div className="absolute top-4 left-4 flex flex-col gap-2 bg-zinc-900/90 backdrop-blur border border-zinc-700 p-3 rounded-xl z-20 shadow-2xl min-w-[140px]">
+            <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
+                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Husillo</span>
+                {simState.spindleDirection === 'CW' && <RotateCw className="text-green-500 animate-spin" size={16} />}
+                {simState.spindleDirection === 'CCW' && <RotateCcw className="text-yellow-500 animate-spin" size={16} />}
+                {simState.spindleDirection === 'STOP' && <Octagon className="text-red-500" size={16} />}
+            </div>
+            
+            <div className="flex flex-col items-center py-1">
+                <span className="text-2xl font-mono font-bold text-white tracking-widest tabular-nums">
+                    {Math.round(simState.spindleSpeed)}
+                </span>
+                <span className="text-[10px] text-zinc-600 font-bold">RPM</span>
+            </div>
+
+            <div className={`text-xs font-bold text-center py-1 rounded ${
+                simState.spindleDirection === 'STOP' ? 'bg-red-900/20 text-red-500' :
+                simState.spindleDirection === 'CW' ? 'bg-green-900/20 text-green-500' :
+                'bg-yellow-900/20 text-yellow-500'
+            }`}>
+                {simState.spindleDirection === 'STOP' ? 'DETENIDO' : 
+                simState.spindleDirection === 'CW' ? 'GIRANDO CW' : 'GIRANDO CCW'}
+            </div>
+        </div>
+        
+        {/* Camera & Settings Control Panel */}
+        <div className="absolute top-4 right-4 flex flex-col gap-2 z-20">
+            {/* View Modes */}
+            <div className="flex flex-col gap-1 bg-zinc-900/80 backdrop-blur border border-zinc-700 p-1.5 rounded-lg">
+                <button 
+                    onClick={() => setViewMode('SIDE')}
+                    className={`p-2 rounded flex items-center gap-2 text-xs font-bold transition-all ${viewMode === 'SIDE' ? 'bg-cnc-accent text-black shadow-lg' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
+                    title="Vista Lateral (XZ)"
+                >
+                    <Monitor size={16} /> <span className="hidden sm:inline">LATERAL</span>
+                </button>
+                <button 
+                    onClick={() => setViewMode('FRONT')}
+                    className={`p-2 rounded flex items-center gap-2 text-xs font-bold transition-all ${viewMode === 'FRONT' ? 'bg-cnc-accent text-black shadow-lg' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
+                    title="Vista Frontal (XY)"
+                >
+                    <Circle size={16} /> <span className="hidden sm:inline">FRONTAL</span>
+                </button>
+                <button 
+                    onClick={() => setViewMode('ISO')}
+                    className={`p-2 rounded flex items-center gap-2 text-xs font-bold transition-all ${viewMode === 'ISO' ? 'bg-cnc-accent text-black shadow-lg' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
+                    title="Vista Isométrica Simulada"
+                >
+                    <Box size={16} /> <span className="hidden sm:inline">ISO</span>
+                </button>
+            </div>
+            
+            {/* Particle Settings Toggle */}
+            <div className="flex flex-col items-end">
+                <button 
+                    onClick={() => setShowSettings(!showSettings)}
+                    className={`p-2 rounded-lg flex items-center gap-2 text-xs font-bold transition-all border border-zinc-700 ${showSettings ? 'bg-zinc-700 text-white' : 'bg-zinc-900/80 text-zinc-400 hover:bg-zinc-800'}`}
+                    title="Ajustes de Partículas"
+                >
+                   <Sparkles size={16} /> <Sliders size={14} />
+                </button>
+                
+                {/* Particle Settings Popup */}
+                {showSettings && (
+                    <div className="mt-2 bg-zinc-900/95 backdrop-blur border border-zinc-700 p-3 rounded-xl shadow-2xl w-48 flex flex-col gap-3 animate-in fade-in slide-in-from-top-2">
+                        <h4 className="text-[10px] font-bold text-cnc-accent uppercase tracking-wider border-b border-zinc-800 pb-1">Efectos Visuales</h4>
+                        
+                        <div className="flex flex-col gap-1">
+                            <div className="flex justify-between text-[10px] text-zinc-400 font-bold">
+                                <span>Densidad</span>
+                                <span>{particleConfig.density}x</span>
+                            </div>
+                            <input 
+                                type="range" min="1" max="20" step="1"
+                                value={particleConfig.density}
+                                onChange={(e) => setParticleConfig({...particleConfig, density: parseInt(e.target.value)})}
+                                className="h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-cnc-accent"
+                            />
+                        </div>
+
+                        <div className="flex flex-col gap-1">
+                            <div className="flex justify-between text-[10px] text-zinc-400 font-bold">
+                                <span>Tamaño</span>
+                                <span>{particleConfig.size}px</span>
+                            </div>
+                            <input 
+                                type="range" min="0.5" max="5.0" step="0.5"
+                                value={particleConfig.size}
+                                onChange={(e) => setParticleConfig({...particleConfig, size: parseFloat(e.target.value)})}
+                                className="h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-cnc-accent"
+                            />
+                        </div>
+
+                        <div className="flex flex-col gap-1">
+                            <div className="flex justify-between text-[10px] text-zinc-400 font-bold">
+                                <span>Duración</span>
+                                <span>{particleConfig.lifespan}s</span>
+                            </div>
+                            <input 
+                                type="range" min="0.5" max="3.0" step="0.5"
+                                value={particleConfig.lifespan}
+                                onChange={(e) => setParticleConfig({...particleConfig, lifespan: parseFloat(e.target.value)})}
+                                className="h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-cnc-accent"
+                            />
+                        </div>
+                    </div>
+                )}
+            </div>
         </div>
 
         {/* Tool Tip */}
