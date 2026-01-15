@@ -18,15 +18,16 @@ export const GeminiTutor: React.FC = () => {
       
       const modelResp = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
-        contents: `You are an expert CNC instructor named "Navior Bot". 
-        Explain the following CNC concept or G-code to a beginner student strictly based on ISO standards. 
-        Keep it concise (under 100 words) and encouraging.
-        User Query: ${query}`,
+        contents: `Eres un experto instructor de CNC llamado "Navior Bot".
+        Explica el siguiente concepto de CNC o código G a un estudiante principiante basándote estrictamente en normas ISO.
+        Responde SIEMPRE en Español.
+        Mantén la respuesta concisa (menos de 100 palabras) y alentadora.
+        Consulta del usuario: ${query}`,
       });
 
       setResponse(modelResp.text);
     } catch (e) {
-      setResponse("Error connecting to AI Tutor. Please check API Key configuration.");
+      setResponse("Error conectando con el Tutor IA. Por favor verifica la configuración de la API Key.");
     } finally {
       setLoading(false);
     }
@@ -36,20 +37,20 @@ export const GeminiTutor: React.FC = () => {
     <div className="bg-cnc-900 border border-cnc-700 rounded-lg p-4 flex flex-col gap-4 h-full">
         <div className="flex items-center gap-2 text-cnc-accent border-b border-cnc-700 pb-2">
             <Bot size={20} />
-            <h3 className="font-bold">AI Tutor (Gemini)</h3>
+            <h3 className="font-bold">Tutor IA (Gemini)</h3>
         </div>
         
         <div className="flex-1 overflow-y-auto min-h-[100px] text-sm text-gray-300">
             {loading ? (
                 <div className="flex items-center gap-2 text-cnc-text animate-pulse">
-                    <Loader size={16} className="animate-spin" /> Thinking...
+                    <Loader size={16} className="animate-spin" /> Pensando...
                 </div>
             ) : response ? (
                 <div className="prose prose-invert prose-sm max-w-none">
                     <p>{response}</p>
                 </div>
             ) : (
-                <p className="text-gray-500 italic">Ask me about G-codes, Cycles, or Tooling...</p>
+                <p className="text-gray-500 italic">Pregúntame sobre códigos G, ciclos o herramientas...</p>
             )}
         </div>
 
@@ -57,7 +58,7 @@ export const GeminiTutor: React.FC = () => {
             <input 
                 type="text" 
                 className="flex-1 bg-cnc-800 border border-cnc-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-cnc-accent"
-                placeholder="Ex: What does G71 do?"
+                placeholder="Ej: ¿Qué hace el G71?"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleAsk()}

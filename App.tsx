@@ -6,7 +6,15 @@ import { Simulator } from './components/Simulator';
 import { GeminiTutor } from './components/GeminiTutor';
 import { CadImporter } from './components/CadImporter';
 import { MachineState, SimulationState, MaterialType, ToolConfig } from './types';
-import { Play, Pause, RotateCcw, RotateCw, Layout, Gauge, AlertTriangle, XCircle, Terminal, Layers, Octagon, Ban, Droplets, Ruler, Settings, Wrench, RefreshCw, CloudDownload } from 'lucide-react';
+import { Play, Pause, RotateCcw, RotateCw, Layout, Gauge, AlertTriangle, XCircle, Terminal, Layers, Octagon, Ban, Droplets, Ruler, Settings, Wrench, RefreshCw, CloudDownload, Edit3, Link2, Crosshair } from 'lucide-react';
+
+const ShortcutButton = ({ k, label, icon, onClick }: { k: string, label: string, icon: React.ReactNode, onClick: () => void }) => (
+    <button onClick={onClick} className="flex flex-col items-center justify-center p-2 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors group relative min-w-[60px]">
+        <div className="mb-1 text-cnc-accent group-hover:text-yellow-400 transition-colors">{icon}</div>
+        <span className="text-[10px] font-bold uppercase tracking-wider">{label}</span>
+        <span className="absolute -top-1 right-1 text-[9px] bg-zinc-700 text-zinc-300 px-1 rounded opacity-0 group-hover:opacity-100 transition-opacity font-mono">{k}</span>
+    </button>
+);
 
 export default function App() {
   const [currentLessonId, setCurrentLessonId] = useState(LESSONS[0].id);
@@ -18,6 +26,10 @@ export default function App() {
   
   // CAD Import Modal State
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+
+  // Aspire Simulation States
+  const [showPaths, setShowPaths] = useState(true);
+  const [aspireToast, setAspireToast] = useState<string | null>(null);
 
   // Tool State Management (Dynamic Wear)
   const [tools, setTools] = useState<ToolConfig[]>(TOOLS);
@@ -46,10 +58,49 @@ export default function App() {
     }
   }, [currentLessonId]);
 
+  // Keyboard Shortcuts for Aspire Simulation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+        // We use some logic to avoid conflict with browser keys if possible, though F11 is usually reserved.
+        
+        if (e.key === 'F11' || e.key === 'F12') {
+            e.preventDefault();
+            setShowPaths(prev => !prev);
+            showToast(e.key === 'F11' ? "Vista: Dibujo 2D" : "Vista: Trayectorias");
+        }
+        if (e.key === 'n' || e.key === 'N') {
+            showToast("Modo: Edición de Nodos");
+        }
+        if (e.key === 'j' || e.key === 'J') {
+            showToast("Acción: Unir Vectores");
+        }
+        if (e.key === 'F9') {
+            e.preventDefault();
+            showToast("Acción: Centrar en Material");
+        }
+        if (e.key === '9') {
+            showToast("Acción: Rotar 45° CCW");
+        }
+        if (e.key === '0') {
+            showToast("Acción: Rotar 45° CW");
+        }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const showToast = (msg: string) => {
+    setAspireToast(msg);
+    setTimeout(() => setAspireToast(null), 2000);
+  };
+
   useEffect(() => {
     let interval: any;
     if (machineState === MachineState.RUNNING) {
         const baseDelay = 500;
+        // Use feedOverride to adjust execution speed
+        // 100% = 500ms, 150% = 333ms, 10% = 5000ms
         const delay = feedOverride > 0 ? baseDelay * (100 / feedOverride) : 100000;
 
         interval = setInterval(() => {
@@ -98,9 +149,41 @@ export default function App() {
 
   const activeToolConfig = tools.find(t => t.id === simState.tool) || tools[0];
 
+  // Helper to translate MaterialType to Spanish for display
+  const translateMaterial = (mat: MaterialType) => {
+      switch(mat) {
+          case 'Steel': return 'Acero';
+          case 'Aluminum': return 'Aluminio';
+          case 'Wood': return 'Madera';
+          case 'Carbon Fiber': return 'Fibra Carbono';
+          case 'Epoxi': return 'Epoxi';
+          case 'POM': return 'POM (Acetal)';
+          default: return mat;
+      }
+  };
+
+  // Helper to translate MachineState
+  const translateState = (state: MachineState) => {
+      switch(state) {
+          case MachineState.IDLE: return 'INACTIVO';
+          case MachineState.RUNNING: return 'EJECUTANDO';
+          case MachineState.PAUSED: return 'PAUSADO';
+          case MachineState.ALARM: return 'ALARMA';
+          default: return state;
+      }
+  };
+
   return (
     <div className="flex h-screen bg-black text-zinc-300 font-sans overflow-hidden">
       
+      {/* Aspire Notification Toast */}
+      {aspireToast && (
+          <div className="fixed bottom-10 left-1/2 transform -translate-x-1/2 bg-zinc-800 border border-cnc-accent text-white px-6 py-3 rounded-lg shadow-2xl z-[100] animate-in slide-in-from-bottom-5 fade-in duration-200 flex items-center gap-3">
+              <div className="w-2 h-2 rounded-full bg-cnc-accent animate-pulse"></div>
+              <span className="font-mono text-sm tracking-wide">{aspireToast}</span>
+          </div>
+      )}
+
       {/* CAD Importer Modal */}
       <CadImporter 
         isOpen={isImportModalOpen} 
@@ -119,7 +202,7 @@ export default function App() {
         </div>
         
         <div className="flex-1 overflow-y-auto p-2">
-            <div className="text-[10px] font-bold text-zinc-500 mb-2 px-3 uppercase tracking-widest mt-2">Training Modules</div>
+            <div className="text-[10px] font-bold text-zinc-500 mb-2 px-3 uppercase tracking-widest mt-2">Módulos de Formación</div>
             {LESSONS.map(lesson => (
                 <button
                     key={lesson.id}
@@ -148,7 +231,7 @@ export default function App() {
                 <div className="bg-red-950/90 border-l-4 border-red-500 rounded-r shadow-2xl p-4 flex items-start gap-4 backdrop-blur-md">
                     <AlertTriangle className="text-red-500 shrink-0" size={32} />
                     <div className="flex-1">
-                        <h3 className="text-red-400 font-bold text-lg mb-1 tracking-wider">SYSTEM ALARM</h3>
+                        <h3 className="text-red-400 font-bold text-lg mb-1 tracking-wider">ALARMA DEL SISTEMA</h3>
                         <p className="text-white font-mono text-sm">{errorMessage}</p>
                     </div>
                     <button onClick={handleReset} className="text-gray-400 hover:text-white"><XCircle size={24} /></button>
@@ -165,14 +248,14 @@ export default function App() {
                     onClick={handlePlay} disabled={machineState === MachineState.ALARM}
                     className={`flex items-center justify-center w-10 h-10 rounded-full shadow-lg transition-all transform active:scale-95
                         ${machineState === MachineState.ALARM ? 'bg-zinc-800 text-zinc-600 cursor-not-allowed' : 'bg-green-600 hover:bg-green-500 text-white shadow-green-900/30'}`}
-                    title="Cycle Start"
+                    title="Inicio Ciclo"
                 >
                     <Play size={16} fill="currentColor" />
                 </button>
                 <button 
                     onClick={handlePause} disabled={machineState === MachineState.ALARM}
                     className={`flex items-center justify-center w-10 h-10 rounded-full transition-all border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white`}
-                    title="Feed Hold"
+                    title="Pausa"
                 >
                     <Pause size={16} fill="currentColor" />
                 </button>
@@ -192,7 +275,7 @@ export default function App() {
                     className="flex items-center gap-2 px-3 py-2 rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-white border border-zinc-700 transition-all text-xs font-bold"
                 >
                     <CloudDownload size={16} className="text-blue-400" />
-                    <span className="hidden xl:inline">IMPORT CAD/CAM</span>
+                    <span className="hidden xl:inline">IMPORTAR CAD/CAM</span>
                 </button>
             </div>
 
@@ -201,21 +284,21 @@ export default function App() {
                  {/* Spindle */}
                  <div className="flex gap-1 p-1.5 border-r border-zinc-800 bg-zinc-900/50">
                      <button
-                        title="Spindle CW (M03)"
+                        title="Husillo CW (M03)"
                         onClick={() => setManualSpindle({dir: 'CW', speed: 1000})}
                         className={`p-1.5 rounded transition-all ${manualSpindle.dir === 'CW' ? 'bg-green-600 text-white shadow-[0_0_8px_#16a34a]' : 'bg-zinc-800 text-zinc-400 hover:text-white'}`}
                     >
                         <RotateCw size={14} />
                     </button>
                     <button
-                        title="Spindle Stop (M05)"
+                        title="Parada Husillo (M05)"
                         onClick={() => setManualSpindle({dir: 'STOP', speed: 0})}
                         className={`p-1.5 rounded transition-all ${manualSpindle.dir === 'STOP' ? 'bg-red-600 text-white shadow-[0_0_8px_#dc2626]' : 'bg-zinc-800 text-zinc-400 hover:text-white'}`}
                     >
                         <Ban size={14} />
                     </button>
                     <button
-                        title="Spindle CCW (M04)"
+                        title="Husillo CCW (M04)"
                         onClick={() => setManualSpindle({dir: 'CCW', speed: 1000})}
                         className={`p-1.5 rounded transition-all ${manualSpindle.dir === 'CCW' ? 'bg-yellow-600 text-black shadow-[0_0_8px_#ca8a04]' : 'bg-zinc-800 text-zinc-400 hover:text-white'}`}
                     >
@@ -233,12 +316,12 @@ export default function App() {
                             onChange={(e) => setStockMaterial(e.target.value as MaterialType)}
                             className="bg-transparent text-xs font-bold text-zinc-300 focus:outline-none cursor-pointer w-24"
                         >
-                            <option value="Steel">Steel</option>
-                            <option value="Aluminum">Aluminum</option>
-                            <option value="Wood">Wood</option>
-                            <option value="Carbon Fiber">Carbon Fiber</option>
+                            <option value="Steel">Acero</option>
+                            <option value="Aluminum">Aluminio</option>
+                            <option value="Wood">Madera</option>
+                            <option value="Carbon Fiber">Fibra Carbono</option>
                             <option value="Epoxi">Epoxi</option>
-                            <option value="POM">POM</option>
+                            <option value="POM">POM (Acetal)</option>
                         </select>
                     </div>
                 </div>
@@ -247,7 +330,7 @@ export default function App() {
                 <div className="flex items-center gap-2 px-3 py-1.5">
                     <Ruler size={14} className="text-zinc-500" />
                     <div className="flex flex-col">
-                         <span className="text-[8px] text-zinc-500 font-bold uppercase">Tolerance (mm)</span>
+                         <span className="text-[8px] text-zinc-500 font-bold uppercase">Tolerancia (mm)</span>
                          <div className="flex items-center gap-1">
                              <span className="text-xs text-zinc-400">±</span>
                              <input 
@@ -272,12 +355,12 @@ export default function App() {
                         {simState.spindleDirection === 'STOP' && <Octagon size={14} className="text-red-500" />}
                         {simState.spindleDirection === 'CW' && <RotateCw size={14} className="text-green-500 animate-spin" />}
                         {simState.spindleDirection === 'CCW' && <RotateCcw size={14} className="text-yellow-500 animate-spin" />}
-                        <span className="text-[8px] font-bold text-zinc-500 mt-0.5">SPN</span>
+                        <span className="text-[8px] font-bold text-zinc-500 mt-0.5">RPM</span>
                      </div>
                      <div className={`flex flex-col items-center justify-center w-8 h-8 rounded border border-white/10 ${simState.coolant !== 'OFF' ? 'bg-blue-900/20' : 'bg-zinc-800'}`}>
                         <Droplets size={14} className={simState.coolant === 'FLOOD' ? "text-blue-500" : simState.coolant === 'MIST' ? "text-cyan-300" : "text-zinc-600"} />
                         <span className="text-[8px] font-bold text-zinc-500 mt-0.5">
-                            {simState.coolant === 'OFF' ? 'OFF' : simState.coolant === 'MIST' ? 'MST' : 'FLD'}
+                            {simState.coolant === 'OFF' ? 'OFF' : simState.coolant === 'MIST' ? 'MIST' : 'FULL'}
                         </span>
                      </div>
                 </div>
@@ -301,19 +384,19 @@ export default function App() {
                  {/* Machine Data */}
                  <div className="grid grid-cols-4 gap-x-4 text-[10px]">
                     <div className="flex flex-col">
-                         <span className="text-zinc-600 font-bold">MODE</span>
-                         <span className={`font-bold ${machineState === MachineState.ALARM ? 'text-red-500 animate-pulse' : 'text-cnc-accent'}`}>{machineState}</span>
+                         <span className="text-zinc-600 font-bold">MODO</span>
+                         <span className={`font-bold ${machineState === MachineState.ALARM ? 'text-red-500 animate-pulse' : 'text-cnc-accent'}`}>{translateState(machineState)}</span>
                     </div>
                     <div className="flex flex-col">
-                        <span className="text-zinc-600 font-bold">TOOL</span>
+                        <span className="text-zinc-600 font-bold">HERR.</span>
                         <span className="text-white">T{simState.tool < 10 ? '0'+simState.tool : simState.tool}</span>
                     </div>
                     <div className="flex flex-col">
-                        <span className="text-zinc-600 font-bold">SPEED</span>
+                        <span className="text-zinc-600 font-bold">VELOCIDAD</span>
                         <span className="text-white">{simState.spindleSpeed}</span>
                     </div>
                      <div className="flex flex-col relative group cursor-pointer" onClick={handleResetWear}>
-                        <span className="text-zinc-600 font-bold flex items-center gap-1">WEAR <RefreshCw size={8}/></span>
+                        <span className="text-zinc-600 font-bold flex items-center gap-1">DESGASTE <RefreshCw size={8}/></span>
                         <span className={`${activeToolConfig.wear > 80 ? 'text-red-500 animate-pulse' : activeToolConfig.wear > 50 ? 'text-yellow-500' : 'text-green-500'} font-bold`}>
                             {activeToolConfig.wear.toFixed(1)}%
                         </span>
@@ -325,13 +408,33 @@ export default function App() {
             <div className="flex items-center gap-3">
                  <div className="flex items-center gap-3 bg-zinc-900 px-3 py-1.5 rounded-lg border border-zinc-800">
                     <Gauge size={16} className="text-zinc-500" />
-                    <div className="flex flex-col w-20">
-                        <div className="flex justify-between text-[8px] text-zinc-500 uppercase font-bold mb-0.5">
-                            <span>Rapid</span>
-                            <span className="text-cnc-accent">{feedOverride}%</span>
+                    <div className="flex flex-col w-36">
+                        <div className="flex justify-between items-center text-[10px] text-zinc-500 uppercase font-bold mb-0.5">
+                            <span>Avance %</span>
+                            <div className="flex items-center">
+                                <input 
+                                    type="number" 
+                                    min="10" 
+                                    max="150" 
+                                    value={feedOverride}
+                                    onChange={(e) => {
+                                        let val = parseInt(e.target.value);
+                                        if (isNaN(val)) val = 0;
+                                        if (val > 150) val = 150;
+                                        setFeedOverride(val);
+                                    }}
+                                    onBlur={() => {
+                                        let val = feedOverride;
+                                        if (val < 10) val = 10;
+                                        setFeedOverride(val);
+                                    }}
+                                    className="w-10 bg-transparent text-right text-cnc-accent outline-none border-b border-zinc-700 focus:border-cnc-accent text-xs font-mono"
+                                />
+                            </div>
                         </div>
                         <input 
-                            type="range" min="0" max="150" step="10" value={feedOverride}
+                            type="range" min="10" max="150" step="1" 
+                            value={Math.max(10, feedOverride)} 
                             onChange={(e) => setFeedOverride(Number(e.target.value))}
                             className="h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-cnc-accent"
                         />
@@ -339,9 +442,9 @@ export default function App() {
                 </div>
 
                  <button
-                    onClick={() => handleAlarm("EMERGENCY STOP TRIGGERED")}
+                    onClick={() => handleAlarm("PARADA DE EMERGENCIA ACTIVADA")}
                     className="flex items-center justify-center w-10 h-10 rounded-full bg-red-600 border-2 border-red-800 shadow-[0_0_10px_rgba(220,38,38,0.5)] hover:shadow-[0_0_15px_rgba(220,38,38,0.8)] active:scale-95 transition-all overflow-hidden"
-                    title="EMERGENCY STOP"
+                    title="PARADA DE EMERGENCIA"
                 >
                     <Octagon size={20} className="text-white animate-pulse" fill="currentColor" strokeWidth={3} />
                 </button>
@@ -357,7 +460,7 @@ export default function App() {
                 <div className="h-2/5 bg-zinc-900/80 backdrop-blur rounded-xl p-0 border border-zinc-800 overflow-hidden flex flex-col shadow-lg">
                     <div className="px-4 py-3 bg-zinc-800/50 border-b border-zinc-800 flex items-center gap-2">
                          <Terminal size={14} className="text-cnc-accent" />
-                         <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Lesson Brief</span>
+                         <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Lección</span>
                     </div>
                     <div className="p-4 overflow-y-auto custom-scrollbar">
                         <h2 className="text-white font-bold text-lg mb-2">{currentLesson.title}</h2>
@@ -375,6 +478,18 @@ export default function App() {
 
             {/* Right: Sim & AI */}
             <div className="col-span-8 flex flex-col gap-4 z-10">
+                
+                {/* Aspire Toolbar - Inserted above Simulator */}
+                <div className="flex gap-2 mb-0 overflow-x-auto pb-1 bg-black/40 p-2 rounded border border-zinc-800 backdrop-blur-sm">
+                    <ShortcutButton k="F11/F12" label="Vista" icon={<Layers size={14}/>} onClick={() => { setShowPaths(!showPaths); showToast(showPaths ? "Vista: Dibujo 2D" : "Vista: Trayectorias"); }} />
+                    <ShortcutButton k="N" label="Edición Nodos" icon={<Edit3 size={14}/>} onClick={() => showToast("Modo: Edición de Nodos")} />
+                    <ShortcutButton k="J" label="Unir" icon={<Link2 size={14}/>} onClick={() => showToast("Acción: Unir Vectores")} />
+                    <ShortcutButton k="F9" label="Centrar" icon={<Crosshair size={14}/>} onClick={() => showToast("Acción: Centrar en Material")} />
+                    <div className="h-8 w-px bg-zinc-700 mx-1 self-center"></div>
+                    <ShortcutButton k="9" label="Rot -45°" icon={<RotateCcw size={14}/>} onClick={() => showToast("Acción: Rotar 45° CCW")} />
+                    <ShortcutButton k="0" label="Rot +45°" icon={<RotateCw size={14}/>} onClick={() => showToast("Acción: Rotar 45° CW")} />
+                </div>
+
                 <div className="flex-1 min-h-0 relative rounded-xl overflow-hidden border border-zinc-700 shadow-2xl">
                     <Simulator 
                         commands={parsedCommands} 
@@ -389,6 +504,7 @@ export default function App() {
                         onRequestResume={handlePlay}
                         tools={tools}
                         onToolWear={updateToolWear}
+                        showPaths={showPaths}
                     />
                 </div>
                 <div className="h-48 shadow-lg">

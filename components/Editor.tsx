@@ -86,7 +86,7 @@ export const Editor: React.FC<EditorProps> = ({ code, onChange, activeLine }) =>
   return (
     <div className="flex flex-col h-full bg-cnc-900 border border-cnc-700 font-mono text-sm rounded-lg overflow-hidden shadow-inner">
       <div className="bg-cnc-850 text-cnc-accent px-4 py-2 text-xs font-bold border-b border-cnc-700 flex justify-between items-center shadow-sm">
-        <span className="tracking-widest">EDIT MODE</span>
+        <span className="tracking-widest">MODO EDICIÓN</span>
         <span className="text-zinc-500">O1001.NC</span>
       </div>
       

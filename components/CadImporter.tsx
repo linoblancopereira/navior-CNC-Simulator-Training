@@ -40,21 +40,22 @@ export const CadImporter: React.FC<CadImporterProps> = ({ isOpen, onClose, onCod
         
         // We use Gemini as the "CAM Processor" to convert the intent/description into G-Code
         // since raw STEP parsing in-browser is extremely heavy.
-        const context = file ? `STEP File: ${file.name}` : `Onshape Part: ${onshapeUrl}`;
+        const context = file ? `Archivo STEP: ${file.name}` : `Pieza Onshape: ${onshapeUrl}`;
         const prompt = `
-          ACT AS A CAM SOFTWARE (Computer Aided Manufacturing).
-          Generate a complete, valid ISO G-Code program for a CNC Lathe (Fanuc style) based on this part description:
-          "${description || 'A standard cylindrical part with multiple diameters'}"
+          ACTÚA COMO UN SOFTWARE CAM (Fabricación Asistida por Computadora).
+          Genera un programa de código G ISO completo y válido para un Torno CNC (estilo Fanuc) basado en esta descripción de pieza:
+          "${description || 'Una pieza cilíndrica estándar con múltiples diámetros'}"
           
-          Context: ${context}
+          Contexto: ${context}
           
-          Rules:
-          1. Use standard header (G28, G50, G96/G97).
-          2. Use Tool T0101 for roughing (G71 Cycle).
-          3. Use Tool T0303 for threading (G76) if the description mentions threads or bolts.
-          4. Use Tool T0202 for grooving (G75) if mentioned.
-          5. Ensure the code is safe and fits within X100 Z100 limits.
-          6. ONLY RETURN THE G-CODE. No markdown formatting, no explanations.
+          Reglas:
+          1. Usa encabezado estándar (G28, G50, G96/G97).
+          2. Usa Herramienta T0101 para desbaste (Ciclo G71).
+          3. Usa Herramienta T0303 para roscado (G76) si la descripción menciona roscas o pernos.
+          4. Usa Herramienta T0202 para ranurado (G75) si se menciona.
+          5. Asegúrate de que el código sea seguro y esté dentro de los límites X100 Z100.
+          6. AÑADE COMENTARIOS EN ESPAÑOL.
+          7. SOLO DEVUELVE EL CÓDIGO G. Sin formato markdown, sin explicaciones.
         `;
 
         const result = await ai.models.generateContent({
@@ -68,7 +69,7 @@ export const CadImporter: React.FC<CadImporterProps> = ({ isOpen, onClose, onCod
         onClose();
 
       } catch (error) {
-        console.error("CAM Generation Failed", error);
+        console.error("Generación CAM Fallida", error);
         setProcessingStep(0);
       }
     }, 3500);
@@ -82,7 +83,7 @@ export const CadImporter: React.FC<CadImporterProps> = ({ isOpen, onClose, onCod
         <div className="bg-cnc-850 p-4 border-b border-cnc-700 flex justify-between items-center">
           <div className="flex items-center gap-2 text-cnc-accent">
             <FileBox size={20} />
-            <h2 className="font-bold tracking-wider">CAD/CAM BRIDGE IMPORTER</h2>
+            <h2 className="font-bold tracking-wider">IMPORTADOR PUENTE CAD/CAM</h2>
           </div>
           <button onClick={onClose} className="text-zinc-500 hover:text-white"><X size={20}/></button>
         </div>
@@ -94,14 +95,14 @@ export const CadImporter: React.FC<CadImporterProps> = ({ isOpen, onClose, onCod
             className={`flex-1 py-3 text-sm font-bold transition-colors flex items-center justify-center gap-2
               ${activeTab === 'onshape' ? 'bg-cnc-800 text-white border-b-2 border-blue-500' : 'text-zinc-500 hover:bg-cnc-800/50'}`}
           >
-            <LinkIcon size={16} /> ONSHAPE INTEGRATION
+            <LinkIcon size={16} /> INTEGRACIÓN ONSHAPE
           </button>
           <button 
             onClick={() => setActiveTab('upload')}
             className={`flex-1 py-3 text-sm font-bold transition-colors flex items-center justify-center gap-2
               ${activeTab === 'upload' ? 'bg-cnc-800 text-white border-b-2 border-green-500' : 'text-zinc-500 hover:bg-cnc-800/50'}`}
           >
-            <Upload size={16} /> STEP FILE UPLOAD
+            <Upload size={16} /> SUBIR ARCHIVO STEP
           </button>
         </div>
 
@@ -115,11 +116,11 @@ export const CadImporter: React.FC<CadImporterProps> = ({ isOpen, onClose, onCod
                  <div className="absolute inset-0 border-4 border-t-cnc-accent rounded-full animate-spin"></div>
               </div>
               <div className="text-center space-y-2">
-                <h3 className="text-xl font-bold text-white animate-pulse">PROCESSING GEOMETRY</h3>
+                <h3 className="text-xl font-bold text-white animate-pulse">PROCESANDO GEOMETRÍA</h3>
                 <div className="text-sm font-mono text-cnc-accent">
-                  {processingStep === 1 && "> PARSING B-REP STRUCTURE..."}
-                  {processingStep === 2 && "> EXTRACTING 2D PROFILE (XZ PLANE)..."}
-                  {processingStep === 3 && "> GENERATING TOOLPATHS (G-CODE)..."}
+                  {processingStep === 1 && "> ANALIZANDO ESTRUCTURA B-REP..."}
+                  {processingStep === 2 && "> EXTRAYENDO PERFIL 2D (PLANO XZ)..."}
+                  {processingStep === 3 && "> GENERANDO TRAYECTORIAS (G-CODE)..."}
                 </div>
               </div>
             </div>
@@ -130,9 +131,9 @@ export const CadImporter: React.FC<CadImporterProps> = ({ isOpen, onClose, onCod
                   <div className="bg-blue-900/20 border border-blue-800 p-4 rounded-lg flex gap-4 items-start">
                     <img src="https://upload.wikimedia.org/wikipedia/commons/e/e3/Onshape_logo.png" alt="Onshape" className="w-10 h-10 object-contain bg-white rounded p-1" />
                     <div>
-                      <h3 className="text-blue-400 font-bold text-sm">CONNECT TO ONSHAPE</h3>
+                      <h3 className="text-blue-400 font-bold text-sm">CONECTAR A ONSHAPE</h3>
                       <p className="text-zinc-400 text-xs mt-1 leading-relaxed">
-                        Design your part in Onshape, then copy the public document URL or export as STEP to import geometry directly.
+                        Diseña tu pieza en Onshape, luego copia la URL pública del documento o exporta como STEP para importar la geometría directamente.
                       </p>
                       <a 
                         href="https://cad.onshape.com/" 
@@ -140,13 +141,13 @@ export const CadImporter: React.FC<CadImporterProps> = ({ isOpen, onClose, onCod
                         rel="noreferrer"
                         className="inline-flex items-center gap-1 text-xs text-white bg-blue-600 hover:bg-blue-500 px-2 py-1 rounded mt-2 font-bold transition-colors"
                       >
-                        LAUNCH ONSHAPE <ArrowRight size={10} />
+                        LANZAR ONSHAPE <ArrowRight size={10} />
                       </a>
                     </div>
                   </div>
 
                   <div>
-                    <label className="text-xs font-bold text-zinc-500 uppercase block mb-2">Onshape Document URL</label>
+                    <label className="text-xs font-bold text-zinc-500 uppercase block mb-2">URL del Documento Onshape</label>
                     <input 
                       type="text" 
                       value={onshapeUrl}
@@ -182,8 +183,8 @@ export const CadImporter: React.FC<CadImporterProps> = ({ isOpen, onClose, onCod
                     <>
                       <Upload size={32} className="text-zinc-600" />
                       <div className="text-center">
-                        <p className="text-zinc-400 font-bold">Click to Upload STEP File</p>
-                        <p className="text-zinc-600 text-xs mt-1">or drag and drop .step / .stp files here</p>
+                        <p className="text-zinc-400 font-bold">Clic para subir archivo STEP</p>
+                        <p className="text-zinc-600 text-xs mt-1">o arrastra y suelta archivos .step / .stp aquí</p>
                       </div>
                     </>
                   )}
@@ -191,12 +192,12 @@ export const CadImporter: React.FC<CadImporterProps> = ({ isOpen, onClose, onCod
               )}
 
               <div className="mt-6 border-t border-cnc-800 pt-4">
-                 <label className="text-xs font-bold text-zinc-500 uppercase block mb-2">Part Description (Helps the CAM Engine)</label>
+                 <label className="text-xs font-bold text-zinc-500 uppercase block mb-2">Descripción de la Pieza (Ayuda al Motor CAM)</label>
                  <input 
                     type="text" 
                     value={description} 
                     onChange={(e) => setDescription(e.target.value)}
-                    placeholder="E.g., M24 Bolt with 50mm threaded length and hex head..."
+                    placeholder="Ej., Perno M24 con 50mm de rosca y cabeza hexagonal..."
                     className="w-full bg-black border border-cnc-700 rounded p-3 text-sm text-zinc-300 focus:border-cnc-accent outline-none"
                  />
               </div>
@@ -207,7 +208,7 @@ export const CadImporter: React.FC<CadImporterProps> = ({ isOpen, onClose, onCod
                 className={`w-full mt-4 py-3 rounded font-bold flex items-center justify-center gap-2 transition-all
                     ${(!file && !onshapeUrl) || !description ? 'bg-cnc-800 text-zinc-600 cursor-not-allowed' : 'bg-cnc-accent hover:bg-yellow-400 text-black shadow-[0_0_15px_rgba(234,179,8,0.4)]'}`}
               >
-                {activeTab === 'onshape' ? 'FETCH & PROCESS' : 'CONVERT TO G-CODE'} <ArrowRight size={16} />
+                {activeTab === 'onshape' ? 'OBTENER Y PROCESAR' : 'CONVERTIR A CÓDIGO G'} <ArrowRight size={16} />
               </button>
             </>
           )}

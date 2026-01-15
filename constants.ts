@@ -1,40 +1,39 @@
-
 import { Lesson, ToolConfig } from './types';
 
 export const TOOLS: ToolConfig[] = [
   { 
     id: 1, 
-    name: "T0101 - Ext. Roughing", 
+    name: "T0101 - Desbaste Ext.", 
     type: 'general', 
     color: '#FFD700', 
     width: 2, 
     lengthOffset: 5.5, 
     noseRadius: 0.8,
-    holderMaterial: '4140 Hardened Steel',
+    holderMaterial: 'Acero Endurecido 4140',
     holderType: 'DCLNR 2525M 12',
     wear: 0
   },
   { 
     id: 2, 
-    name: "T0202 - Grooving 3mm", 
+    name: "T0202 - Ranurado 3mm", 
     type: 'grooving', 
     color: '#00FFFF', 
     width: 3, 
     lengthOffset: 3.0, 
     noseRadius: 0.2,
-    holderMaterial: 'Spring Steel',
+    holderMaterial: 'Acero para Resortes',
     holderType: 'MGEHR 2525-3',
     wear: 0
   },
   { 
     id: 3, 
-    name: "T0303 - Threading 60°", 
+    name: "T0303 - Roscado 60°", 
     type: 'threading', 
     color: '#FF00FF', 
     width: 1, 
     lengthOffset: 8.2, 
     noseRadius: 0.1,
-    holderMaterial: 'Hardened Steel',
+    holderMaterial: 'Acero Endurecido',
     holderType: 'SER 2525M 16',
     wear: 0
   },
@@ -43,140 +42,140 @@ export const TOOLS: ToolConfig[] = [
 export const LESSONS: Lesson[] = [
   {
     id: 'intro',
-    title: '1. Introduction to CNC',
+    title: '1. Introducción al CNC',
     module: 1,
     content: `
-# What is a CNC Lathe?
+# ¿Qué es un Torno CNC?
 
-A lathe is a machine tool used to perform machining operations, generally symmetrical with respect to an axis of rotation. Workpieces are mounted on a rotating chuck, while cutting tools move linearly.
+Un torno es una máquina herramienta utilizada para realizar operaciones de mecanizado, generalmente simétricas respecto a un eje de rotación. Las piezas se montan en un mandril giratorio, mientras que las herramientas de corte se mueven linealmente.
 
-### Main Axes
-* **X Axis:** Controls the diameter. Movement perpendicular to the axis of rotation.
-* **Z Axis:** Controls the length. Movement parallel to the axis of rotation.
+### Ejes Principales
+* **Eje X:** Controla el diámetro. Movimiento perpendicular al eje de rotación.
+* **Eje Z:** Controla la longitud. Movimiento paralelo al eje de rotación.
 
-In the simulator on the right, you will see these axes represented.
+En el simulador a la derecha, verás estos ejes representados.
     `,
-    defaultCode: `( EXAMPLE PROGRAM )
+    defaultCode: `( PROGRAMA DE EJEMPLO )
 G28 U0 W0 (Home)
 M30`
   },
   {
     id: 'g00-g01',
-    title: '2. Basic Movements (G00/G01)',
+    title: '2. Movimientos Básicos (G00/G01)',
     module: 2,
     content: `
-# Linear Interpolation
+# Interpolación Lineal
 
-There are two main types of linear movement:
+Existen dos tipos principales de movimiento lineal:
 
-### G00: Rapid Positioning
-Moves at the machine's maximum speed without cutting material.
+### G00: Posicionamiento Rápido
+Se mueve a la velocidad máxima de la máquina sin cortar material.
 \`G00 X50 Z2\`
 
-### G01: Linear Interpolation
-Moves at a controlled speed (Feed rate F) cutting material.
+### G01: Interpolación Lineal
+Se mueve a una velocidad controlada (Avance F) cortando material.
 \`G01 X40 Z-20 F0.2\`
 
-**Exercise:** Try moving the tool to the start point and performing a simple turning cut.
+**Ejercicio:** Intenta mover la herramienta al punto de inicio y realizar un corte de cilindrado simple.
     `,
     defaultCode: `N10 G28 U0 W0
 N20 T0101
 N30 G97 S1000 M03
-N40 G00 X50 Z2 (Rapid approach)
-N50 G01 X45 F0.2 (Position for cut)
-N60 G01 Z-30 (Turning)
-N70 G00 X60 (Retract X)
-N80 G00 Z2 (Retract Z)
+N40 G00 X50 Z2 (Aproximación rápida)
+N50 G01 X45 F0.2 (Posición de corte)
+N60 G01 Z-30 (Cilindrado)
+N70 G00 X60 (Retirada en X)
+N80 G00 Z2 (Retirada en Z)
 N90 M30`
   },
   {
     id: 'g02-g03',
-    title: '3. Circular Interpolation (G02/G03)',
+    title: '3. Interpolación Circular (G02/G03)',
     module: 2,
     content: `
-# Circular Interpolation
+# Interpolación Circular
 
-Allows machining of controlled arcs and radii.
+Permite mecanizar arcos y radios controlados.
 
-### G02: Clockwise Arc (CW)
-Moves the tool in a right-hand arc (clockwise).
+### G02: Arco Sentido Horario (CW)
+Mueve la herramienta en un arco a la derecha (sentido agujas del reloj).
 \`G02 X30 Z-15 R5\`
 
-### G03: Counter-Clockwise Arc (CCW)
-Moves the tool in a left-hand arc (counter-clockwise).
+### G03: Arco Sentido Antihorario (CCW)
+Mueve la herramienta en un arco a la izquierda (sentido contrario agujas).
 \`G03 X50 Z-25 R10\`
 
-**Parameters:**
-* **X, Z:** Coordinates of the arc end point.
-* **R:** Radius of the arc.
+**Parámetros:**
+* **X, Z:** Coordenadas del punto final del arco.
+* **R:** Radio del arco.
     `,
     defaultCode: `N10 G28 U0 W0
 N20 T0101
 N30 G97 S1000 M03
 N40 G00 X0 Z2
 N50 G01 Z0 F0.2
-N60 G03 X20 Z-10 R10 (Convex radius)
+N60 G03 X20 Z-10 R10 (Radio convexo)
 N70 G01 Z-20
-N80 G02 X40 Z-30 R10 (Concave radius)
+N80 G02 X40 Z-30 R10 (Radio cóncavo)
 N90 G01 X42
 N100 G28 U0 W0
 N110 M30`
   },
   {
     id: 'g71',
-    title: '4. Roughing Cycle (G71)',
+    title: '4. Ciclo de Desbaste (G71)',
     module: 2,
     content: `
-# G71 Cycle
+# Ciclo G71
 
-The G71 cycle automates the longitudinal roughing process.
+El ciclo G71 automatiza el proceso de desbaste longitudinal.
 
-**Syntax:**
-1. \`G71 U(depth) R(retract)\`
-2. \`G71 P(start) Q(end) U(allowance X) W(allowance Z) F(feed)\`
+**Sintaxis:**
+1. \`G71 U(profundidad) R(retorno)\`
+2. \`G71 P(inicio) Q(fin) U(sobremedida X) W(sobremedida Z) F(avance)\`
 
-The machine will automatically calculate the passes needed to reach the profile defined between blocks P and Q.
+La máquina calculará automáticamente las pasadas necesarias para llegar al perfil definido entre los bloques P y Q.
     `,
     defaultCode: `N10 G28 U0 W0
 N20 T0101
 N30 G96 S200 M03
 N40 G00 X60 Z2
-(Start G71 Cycle)
+(Inicio Ciclo G71)
 N50 G71 U2 R1
 N60 G71 P70 Q110 U0.5 W0.1 F0.3
-(Part Profile)
+(Perfil de la pieza)
 N70 G00 X40
 N80 G01 Z-20
 N90 X50
 N100 Z-40
 N110 X60
-(End Profile)
-N120 G70 P70 Q110 (Finishing Cycle)
+(Fin del perfil)
+N120 G70 P70 Q110 (Ciclo de Acabado)
 N130 G28 U0 W0
 N140 M30`
   },
   {
     id: 'g70',
-    title: '5. Finishing Cycle (G70)',
+    title: '5. Ciclo de Acabado (G70)',
     module: 3,
     content: `
-# G70 Finishing Cycle
+# Ciclo de Acabado G70
 
-After performing roughing with G71, G72, or G73, the part remains with an allowance (defined by U and W in the roughing cycle). The G70 cycle is used to perform a single final pass following the programmed contour to remove this allowance.
+Después de realizar el desbaste con G71, G72 o G73, la pieza queda con una sobremedida (definida por U y W en el ciclo de desbaste). El ciclo G70 se usa para dar una única pasada final siguiendo el contorno programado para eliminar ese exceso.
 
-**Syntax:**
-\`G70 P(start) Q(end)\`
+**Sintaxis:**
+\`G70 P(inicio) Q(fin)\`
 
-* **P:** Block number of the start of the contour.
-* **Q:** Block number of the end of the contour.
+* **P:** Número de bloque del inicio del contorno.
+* **Q:** Número de bloque del final del contorno.
 
-The G70 cycle uses the same feed (F) and speed (S) programmed within the P-Q contour.
+El ciclo G70 utiliza el avance (F) y velocidad (S) programados dentro del contorno P-Q.
     `,
     defaultCode: `N10 G28 U0 W0
-N20 T0101 (Roughing)
+N20 T0101 (Herramienta Desbaste)
 N30 G96 S200 M03
 N40 G00 X60 Z2
-(G71 Roughing leaving 0.5mm)
+(Desbaste G71 dejando 0.5mm)
 N50 G71 U2 R1
 N60 G71 P70 Q110 U0.5 W0.1 F0.25
 N70 G00 X40
@@ -184,39 +183,39 @@ N80 G01 Z-20
 N90 X50
 N100 Z-40
 N110 X60
-(Change to Finishing Tool)
+(Cambio a Herramienta Acabado)
 N120 G28 U0 W0
-N130 T0303 (Finishing)
+N130 T0303 (Acabado)
 N140 G96 S250 M03
 N150 G00 X60 Z2
-(G70 Cycle)
+(Ciclo G70)
 N160 G70 P70 Q110
 N170 G28 U0 W0
 N180 M30`
   },
   {
     id: 'g75',
-    title: '6. Grooving (G75)',
+    title: '6. Ranurado (G75)',
     module: 3,
     content: `
-# G75 Grooving Cycle
+# Ciclo de Ranurado G75
 
-The G75 cycle is used to machine grooves on the outer or inner diameter (X-axis). It breaks the chip by retracting the tool periodically.
+El ciclo G75 se utiliza para mecanizar ranuras en el diámetro exterior o interior (eje X). Realiza rotura de viruta retrayendo la herramienta periódicamente.
 
-**Syntax:**
-1. \`G75 R(retract)\`
-2. \`G75 X(end) Z(end) P(inc. X) Q(inc. Z) F(feed)\`
+**Sintaxis:**
+1. \`G75 R(retorno)\`
+2. \`G75 X(fin) Z(fin) P(inc. X) Q(inc. Z) F(avance)\`
 
-* **X, Z:** Coordinates of the groove end point.
-* **P:** Depth of cut in X (radius) in microns (no decimal point).
-* **Q:** Lateral shift in Z in microns.
-* **R:** Retraction to break chips.
+* **X, Z:** Coordenadas del punto final de la ranura.
+* **P:** Profundidad de corte en X (radio) en micras (sin punto decimal).
+* **Q:** Desplazamiento lateral en Z en micras.
+* **R:** Retracción para romper viruta.
     `,
     defaultCode: `N10 G28 U0 W0
-N20 T0202 (Grooving Tool 3mm)
+N20 T0202 (Ranurador 3mm)
 N30 G97 S1000 M03
 N40 G00 X52 Z-20
-(Start G75 Cycle)
+(Inicio Ciclo G75)
 N50 G75 R1
 N60 G75 X30 Z-20 P1000 F0.1
 N70 G00 X60
@@ -225,30 +224,30 @@ N90 M30`
   },
   {
     id: 'g76',
-    title: '7. Threading Cycle (G76)',
+    title: '7. Ciclo de Roscado (G76)',
     module: 4,
     content: `
-# G76 Threading Cycle
+# Ciclo de Roscado G76
 
-G76 is the most comprehensive cycle for performing threads in multiple passes.
+G76 es el ciclo más completo para realizar roscas en múltiples pasadas.
 
-**Syntax:**
-1. \`G76 P(m)(r)(a) Q(min) R(finish)\`
-2. \`G76 X(end) Z(end) P(height) Q(first) F(pitch)\`
+**Sintaxis:**
+1. \`G76 P(m)(r)(a) Q(min) R(acabado)\`
+2. \`G76 X(fin) Z(fin) P(altura) Q(primera) F(paso)\`
 
-* **P(mra):** m=repetitions, r=chamfer amount, a=tool angle (60°).
-* **X, Z:** Final coordinates of the thread.
-* **P(height):** Thread height (microns).
-* **F:** Thread pitch (mm).
+* **P(mra):** m=repeticiones, r=bisel salida, a=ángulo herramienta (60°).
+* **X, Z:** Coordenadas finales de la rosca.
+* **P(altura):** Altura de la rosca (micras).
+* **F:** Paso de la rosca (mm).
     `,
     defaultCode: `N10 G28 U0 W0
-N20 T0303 (Threading Tool 60deg)
+N20 T0303 (Herramienta Rosca 60°)
 N30 G97 S800 M03
 N40 G00 X30 Z5
-(G76 Cycle M24x2.0)
-(P010060: 1 finish pass, 0 chamfer, 60 deg angle)
+(Ciclo G76 M24x2.0)
+(P010060: 1 pasada acabado, 0 bisel, 60 grados)
 N50 G76 P010060 Q100 R0.05
-(X=24 - 2.4 = 21.6 approx)
+(X=24 - 2.4 = 21.6 aprox)
 N60 G76 X21.6 Z-25 P1200 Q300 F2.0
 N70 G00 X50 Z10
 N80 G28 U0 W0
@@ -256,55 +255,55 @@ N90 M30`
   },
     {
     id: 'g41-g42',
-    title: '8. Radius Compensation (G41/G42)',
+    title: '8. Compensación de Radio (G41/G42)',
     module: 4,
     content: `
-# Radius Compensation
+# Compensación de Radio
 
-The tool tip has a radius (e.g., 0.8mm). When machining cones or arcs, this causes errors if not compensated.
+La punta de la herramienta tiene un radio (ej. 0.8mm). Al mecanizar conos o arcos, esto causa errores si no se compensa.
 
-### Commands
-* **G40:** Cancel compensation.
-* **G41:** Compensation to the LEFT of the material.
-* **G42:** Compensation to the RIGHT of the material.
+### Comandos
+* **G40:** Cancelar compensación.
+* **G41:** Compensación a la IZQUIERDA del material.
+* **G42:** Compensación a la DERECHA del material.
 
-For external turning towards the chuck, **G42** is generally used.
+Para torneado exterior hacia el plato, generalmente se usa **G42**.
     `,
     defaultCode: `N10 G28 U0 W0
-N20 T0101 (Radius 0.8)
+N20 T0101 (Radio 0.8)
 N30 G96 S200 M03
 N40 G00 X100 Z5
-(Activate Comp Right G42)
+(Activar Comp Derecha G42)
 N50 G00 G42 X40 Z2
 N60 G01 Z-20 F0.2
-N70 G01 X60 Z-40 (Compensated taper)
+N70 G01 X60 Z-40 (Cono compensado)
 N80 G01 Z-60
-(Deactivate on retract)
+(Desactivar al retirar)
 N90 G00 G40 X100 Z5
 N100 M30`
   },
   {
     id: 'g74',
-    title: '9. Deep Drilling (G74)',
+    title: '9. Taladrado Profundo (G74)',
     module: 5,
     content: `
-# G74 Deep Drilling
+# Taladrado Profundo G74
 
-Although G74 is used for face grooving, it is commonly used for deep drilling with chip breaking (Peck Drilling) in the Z-axis.
+Aunque G74 se usa para ranurado frontal, es comúnmente usado para taladrado profundo con rotura de viruta (Peck Drilling) en el eje Z.
 
-**Syntax:**
-\`G74 R(retract)\`
-\`G74 Z(depth) Q(delta Z) F(feed)\`
+**Sintaxis:**
+\`G74 R(retorno)\`
+\`G74 Z(profundidad) Q(delta Z) F(avance)\`
 
-* **Z:** Final depth.
-* **Q:** Cut increment (microns).
-* **R:** Retract amount.
+* **Z:** Profundidad final.
+* **Q:** Incremento de corte (micras).
+* **R:** Cantidad de retorno.
     `,
     defaultCode: `N10 G28 U0 W0
-N20 T0202 (Simulated Drill)
+N20 T0202 (Broca Simulada)
 N30 G97 S800 M03
-N40 G00 X0 Z5 (Position at center)
-(Drilling Cycle)
+N40 G00 X0 Z5 (Posición en centro)
+(Ciclo de Taladrado)
 N50 G74 R1
 N60 G74 Z-30 Q5000 F0.15
 N70 G00 X50 Z10
@@ -313,55 +312,55 @@ N90 M30`
   },
   {
     id: 'g72',
-    title: '10. Facing Cycle (G72)',
+    title: '10. Ciclo de Refrentado (G72)',
     module: 5,
     content: `
-# G72 Cycle (Facing)
+# Ciclo G72 (Refrentado)
 
-Works similarly to G71 but roughs in the transverse direction (X-axis) instead of longitudinal. It is useful for short parts with large diameters or for removing a lot of material from the front face.
+Funciona similar al G71 pero desbasta en dirección transversal (eje X) en lugar de longitudinal. Es útil para piezas cortas de gran diámetro o para eliminar mucho material de la cara frontal.
 
-**Syntax:**
-1. \`G72 W(depth) R(retract)\`
-2. \`G72 P(start) Q(end) U(allowance X) W(allowance Z) F(feed)\`
+**Sintaxis:**
+1. \`G72 W(profundidad) R(retorno)\`
+2. \`G72 P(inicio) Q(fin) U(sobremedida X) W(sobremedida Z) F(avance)\`
 
-Observe how the tool cuts by moving in X.
+Observa cómo la herramienta corta moviéndose en X.
     `,
     defaultCode: `N10 G28 U0 W0
 N20 T0101
 N30 G96 S200 M03
 N40 G00 X85 Z2
-(Facing Cycle G72)
+(Ciclo Refrentado G72)
 N50 G72 W2 R1
 N60 G72 P70 Q100 U0.2 W0.1 F0.25
 N70 G00 Z-10
 N80 G01 X40
 N90 Z-5
 N100 X80
-N110 G70 P70 Q100 (Finishing)
+N110 G70 P70 Q100 (Acabado)
 N120 G28 U0 W0
 N130 M30`
   },
   {
     id: 'g04',
-    title: '11. Dwell (G04)',
+    title: '11. Pausa (G04)',
     module: 6,
     content: `
-# Dwell G04
+# Pausa (Dwell) G04
 
-The G04 command stops axis movement for a specific time while keeping the spindle turning. It is crucial for cleaning groove bottoms or drilling.
+El comando G04 detiene el movimiento de los ejes por un tiempo específico manteniendo el husillo girando. Es crucial para limpiar fondos de ranuras o taladrados.
 
-**Syntax:**
-\`G04 X(time_seconds)\` or \`G04 P(time_milliseconds)\`
+**Sintaxis:**
+\`G04 X(tiempo_segundos)\` o \`G04 P(tiempo_milisegundos)\`
 
-Example: \`G04 X1.5\` pauses movement for 1.5 seconds.
+Ejemplo: \`G04 X1.5\` pausa el movimiento por 1.5 segundos.
     `,
     defaultCode: `N10 G28 U0 W0
-N20 T0202 (Grooving)
+N20 T0202 (Ranurado)
 N30 G97 S800 M03
 N40 G00 X52 Z-20
-(Simple groove)
+(Ranura simple)
 N50 G01 X40 F0.05
-(Pause at bottom to polish)
+(Pausa en el fondo para pulir)
 N60 G04 X1.0
 N70 G00 X52
 N80 G28 U0 W0
@@ -369,59 +368,59 @@ N90 M30`
   },
   {
     id: 'g96-g97',
-    title: '12. Cutting Speed (G96/G97)',
+    title: '12. Velocidad de Corte (G96/G97)',
     module: 6,
     content: `
 # G96 vs G97
 
-### G97: Fixed RPM
-The spindle rotates at constant revolutions (e.g., 1000 RPM) regardless of the diameter. Used in drilling and threading.
+### G97: RPM Fijas
+El husillo gira a revoluciones constantes (ej. 1000 RPM) sin importar el diámetro. Se usa en taladrado y roscado.
 \`G97 S1000 M03\`
 
-### G96: Constant Surface Speed (CSS)
-The machine adjusts RPM automatically based on the diameter (X) to maintain surface speed (meters/min). Smaller diameter means higher RPM.
+### G96: Velocidad de Corte Constante (CSS)
+La máquina ajusta las RPM automáticamente según el diámetro (X) para mantener la velocidad superficial (metros/min). A menor diámetro, más RPM.
 \`G96 S200 M03\` (200 m/min)
 
-**Note:** With G96, always limit the maximum speed with **G50**.
+**Nota:** Con G96, siempre limita la velocidad máxima con **G50**.
     `,
     defaultCode: `N10 G28 U0 W0
 N20 T0101
-(G50 Limit Max RPM to 2000)
+(G50 Limitar Max RPM a 2000)
 N30 G50 S2000
-(G96 Activate CSS at 150m/min)
+(G96 Activar CSS a 150m/min)
 N40 G96 S150 M03
 N50 G00 X80 Z2
-(As it goes down to X20, RPM will rise)
+(Al bajar a X20, las RPM subirán)
 N60 G01 X20 F0.2
 N70 G01 Z-10
-(G97 Return to Fixed RPM to retract)
+(G97 Volver a RPM Fijas para retirar)
 N80 G97 S500
 N90 G28 U0 W0
 N100 M30`
   },
   {
     id: 'g32',
-    title: '13. Manual Threading (G32)',
+    title: '13. Roscado Manual (G32)',
     module: 7,
     content: `
-# Step-by-Step Threading (G32)
+# Roscado paso a paso (G32)
 
-Before the G76 cycle, threads were made pass by pass with G32 (or G33). G32 synchronizes the feed with the spindle rotation to create the thread helix.
+Antes del ciclo G76, las roscas se hacían pasada por pasada con G32 (o G33). G32 sincroniza el avance con el giro del husillo para crear la hélice de la rosca.
 
-It requires programming each depth pass manually. It is useful for special threads or complex tapers.
+Requiere programar cada pasada de profundidad manualmente. Es útil para roscas especiales o cónicas complejas.
 
-**Syntax:** \`G32 Z(end) F(pitch)\`
+**Sintaxis:** \`G32 Z(fin) F(paso)\`
     `,
     defaultCode: `N10 G28 U0 W0
-N20 T0303 (Threading)
+N20 T0303 (Roscado)
 N30 G97 S500 M03
 N40 G00 X30 Z5
-(Pass 1)
+(Pasada 1)
 N50 G00 X29.5
-N60 G32 Z-20 F2.0 (Cut thread)
-N70 G00 X32 (Rapid exit)
-N80 Z5 (Return)
-(Pass 2)
+N60 G32 Z-20 F2.0 (Corte rosca)
+N70 G00 X32 (Salida rápida)
+N80 Z5 (Retorno)
+(Pasada 2)
 N90 X29.0
 N100 G32 Z-20 F2.0
 N110 G00 X32
@@ -430,56 +429,56 @@ N130 M30`
   },
   {
     id: 'tool-wear',
-    title: '14. Tool Wear Simulation',
+    title: '14. Simulación Desgaste Herr.',
     module: 7,
     content: `
-# Tool Wear & M100
+# Desgaste de Herramienta y M100
 
-Tools degrade over time, affecting finish and dimensions. In this simulator:
+Las herramientas se degradan con el tiempo, afectando el acabado y las dimensiones. En este simulador:
 
-1. **Wear:** Increases when cutting hard materials. The tool tip becomes rounded and red.
-2. **Reset:** Use **M100** to replace the insert (reset wear to 0%).
+1. **Desgaste:** Aumenta al cortar materiales duros. La punta se redondea y se pone roja.
+2. **Reset:** Usa **M100** para cambiar el inserto (resetear desgaste a 0%).
 
-**Material Hardness:**
-* Steel: High Wear
-* Aluminum: Low Wear
-* Wood: Very Low Wear
+**Dureza del Material:**
+* Acero: Alto Desgaste
+* Aluminio: Bajo Desgaste
+* Madera: Muy Bajo Desgaste
 
-**Exercise:** Run the program and watch the "Tool Wear" indicator increase. Then use M100 to reset it.
+**Ejercicio:** Ejecuta el programa y observa el indicador "Desgaste" subir. Luego usa M100 para resetearlo.
     `,
     defaultCode: `N10 G28 U0 W0
 N20 T0101
 N30 G97 S1500 M03
-(Cut repeatedly to induce wear)
+(Cortar repetidamente para inducir desgaste)
 N40 G00 X50 Z2
 N50 G01 Z-50 F0.3
 N60 G00 X55 Z2
 N70 G01 X45 F0.3
 N80 G01 Z-50
 N90 G00 X60 Z2
-(Reset Wear)
-N100 M100 (New Insert)
+(Resetear Desgaste)
+N100 M100 (Inserto Nuevo)
 N110 G28 U0 W0
 N120 M30`
   },
   {
     id: 'parting',
-    title: '15. Parting Off',
+    title: '15. Tronzado',
     module: 8,
     content: `
-# Parting Operation
+# Operación de Tronzado
 
-Parting is the final operation where the machined part is separated from the bar stock. A grooving tool (blade) is used, cutting past the center (X-1 or X-2).
+El tronzado es la operación final donde la pieza mecanizada se separa de la barra. Se usa una herramienta de ranurado (lama), cortando pasadas más allá del centro (X-1 o X-2).
 
-It is critical to reduce RPM before reaching the center (or use G97) to avoid vibrations or the part being thrown with excessive force.
+Es crítico reducir las RPM antes de llegar al centro (o usar G97) para evitar vibraciones o que la pieza salga despedida con fuerza excesiva.
     `,
     defaultCode: `N10 G28 U0 W0
-N20 T0202 (Parting 3mm)
+N20 T0202 (Tronzado 3mm)
 N30 G97 S800 M03
 N40 G00 X82 Z-40
-(Approach)
+(Aproximación)
 N50 G00 X60
-(Interrupted cut to break chips)
+(Corte interrumpido para romper viruta)
 N60 G75 R1
 N70 G75 X-1.0 Z-40 P2000 F0.08
 N80 G00 X85
@@ -488,45 +487,45 @@ N100 M30`
   },
   {
     id: 'capstone',
-    title: '16. Final Project',
+    title: '16. Proyecto Final',
     module: 8,
     content: `
-# Final Challenge: Special Bolt
+# Desafío Final: Perno Especial
 
-Combine what you've learned to manufacture a bolt with a hex head (simulated cylindrical), a grooved neck, and an M20x1.5 thread.
+Combina lo aprendido para fabricar un perno con cabeza hexagonal (simulada cilíndrica), cuello ranurado y rosca M20x1.5.
 
-**Operations:**
-1. Profile Roughing (G71).
-2. Finishing (G70).
-3. Relief Grooving (G75).
-4. Final Threading (G76).
+**Operaciones:**
+1. Desbaste Perfil (G71).
+2. Acabado (G70).
+3. Ranurado de Alivio (G75).
+4. Roscado Final (G76).
 
-Analyze the code and run it!
+¡Analiza el código y ejecútalo!
     `,
     defaultCode: `N10 G28 U0 W0
-(OP1: Roughing T01)
+(OP1: Desbaste T01)
 N20 T0101
 N30 G96 S200 M03
 N40 G00 X50 Z2
 N50 G71 U1.5 R0.5
 N60 G71 P70 Q110 U0.4 W0.1 F0.25
-N70 G00 X19.8 (Pre-thread diameter)
-N80 G01 Z-20 (Thread length)
-N90 X30 (Neck)
+N70 G00 X19.8 (Diametro pre-rosca)
+N80 G01 Z-20 (Longitud rosca)
+N90 X30 (Cuello)
 N100 Z-40
-N110 X50 (Head)
-N120 G70 P70 Q110 (Finish)
+N110 X50 (Cabeza)
+N120 G70 P70 Q110 (Acabado)
 N130 G28 U0 W0
 
-(OP2: Grooving T02)
+(OP2: Ranurado T02)
 N140 T0202
 N150 G97 S800 M03
 N160 G00 X32 Z-20
 N170 G75 R0.5
-N180 G75 X18 Z-20 P500 F0.08 (Relief groove)
+N180 G75 X18 Z-20 P500 F0.08 (Ranura alivio)
 N190 G28 U0 W0
 
-(OP3: Threading T03)
+(OP3: Roscado T03)
 N200 T0303
 N210 G97 S600 M03
 N220 G00 X22 Z5

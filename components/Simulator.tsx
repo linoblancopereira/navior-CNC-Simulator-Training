@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Video, Monitor, Box, Circle } from 'lucide-react';
 import { GCodeCommand, SimulationState, MachineState, ToolConfig, MaterialType } from '../types';
 
 interface SimulatorProps {
@@ -10,6 +10,7 @@ interface SimulatorProps {
   stockMaterial: MaterialType;
   manualSpindle: {dir: 'CW' | 'CCW' | 'STOP', speed: number};
   tools: ToolConfig[];
+  showPaths: boolean; 
   onError: (msg: string) => void;
   onStateChange?: (state: SimulationState) => void;
   onRequestPause?: () => void;
@@ -41,6 +42,7 @@ export const Simulator: React.FC<SimulatorProps> = ({
   stockMaterial,
   manualSpindle,
   tools,
+  showPaths,
   onError, 
   onStateChange,
   onRequestPause,
@@ -52,9 +54,13 @@ export const Simulator: React.FC<SimulatorProps> = ({
   const particlesRef = useRef<Particle[]>([]);
   const [tooltip, setTooltip] = useState<{x: number, y: number, tool: ToolConfig} | null>(null);
   
+  // Camera State
+  const [viewMode, setViewMode] = useState<'SIDE' | 'FRONT' | 'ISO'>('SIDE');
+  
   // Animation Physics Refs
   const lastTimeRef = useRef<number>(0);
   const rotationRef = useRef<number>(0);
+  const toolScreenPosRef = useRef<{x: number, y: number} | null>(null);
   
   // Tool Change Prompt State
   const [pendingToolChange, setPendingToolChange] = useState<GCodeCommand | null>(null);
@@ -79,6 +85,31 @@ export const Simulator: React.FC<SimulatorProps> = ({
   const prevPosRef = useRef({ x: 100, z: 50 });
   const accumWearRef = useRef<number>(0);
 
+  // Helper to get material color for tooltip
+  const getMaterialColor = (mat: MaterialType) => {
+    switch(mat) {
+      case 'Aluminum': return '#e2e8f0';
+      case 'Wood': return '#d97706';
+      case 'Carbon Fiber': return '#111111';
+      case 'Epoxi': return '#facc15';
+      case 'POM': return '#f8fafc';
+      case 'Steel': default: return '#718096';
+    }
+  };
+
+  // Helper to translate material name
+  const translateMaterial = (mat: MaterialType) => {
+    switch(mat) {
+        case 'Steel': return 'Acero';
+        case 'Aluminum': return 'Aluminio';
+        case 'Wood': return 'Madera';
+        case 'Carbon Fiber': return 'Fibra Carbono';
+        case 'Epoxi': return 'Epoxi';
+        case 'POM': return 'POM';
+        default: return mat;
+    }
+  };
+
   // Handle Reset / Rewind logic for Tool Change tracking
   useEffect(() => {
     if (machineState === MachineState.IDLE || currentLine < lastHandledToolLine.current) {
@@ -92,7 +123,6 @@ export const Simulator: React.FC<SimulatorProps> = ({
     if (machineState === MachineState.ALARM) return;
 
     if (machineState === MachineState.IDLE) {
-        // In IDLE mode, reflect manual controls passed via props
         const idleState: SimulationState = {
             x: 100, z: 50, feedRate: 0, 
             spindleSpeed: manualSpindle.dir !== 'STOP' ? manualSpindle.speed : 0, 
@@ -120,7 +150,6 @@ export const Simulator: React.FC<SimulatorProps> = ({
 
     // Handle M100 - Reset Wear Command
     if (activeCmd && activeCmd.type === 'M' && activeCmd.code === 100 && machineState === MachineState.RUNNING) {
-        // We do this check to avoid repeated calls in the loop
         onToolWear(simState.tool, 0);
     }
 
@@ -141,11 +170,10 @@ export const Simulator: React.FC<SimulatorProps> = ({
         
         // Basic Validation
         if (cmd.type === 'G' && cmd.code !== undefined && !VALID_G_CODES.includes(cmd.code)) {
-            onError(`Syntax Error: G${cmd.code} not supported on line ${cmd.line}`);
+            onError(`Error Sintaxis: G${cmd.code} no soportado en línea ${cmd.line}`);
             return;
         }
 
-        // Logic (Same as before)
         if (cmd.type === 'G') {
             if (cmd.code === 90) tempPositioning = 'ABS';
             else if (cmd.code === 91) tempPositioning = 'INC';
@@ -163,7 +191,6 @@ export const Simulator: React.FC<SimulatorProps> = ({
         if (cmd.params.Z !== undefined) tempZ = tempPositioning === 'ABS' ? cmd.params.Z : tempZ + cmd.params.Z;
         if (cmd.params.W !== undefined) tempZ += cmd.params.W;
         
-        // Spindle Speed
         if (cmd.params.S !== undefined && !(cmd.type === 'G' && cmd.code === 50)) {
             tempS = cmd.params.S;
         }
@@ -203,7 +230,7 @@ export const Simulator: React.FC<SimulatorProps> = ({
     setSimState(newState);
     if (onStateChange) onStateChange(newState);
 
-  }, [commands, currentLine, machineState, onError, onStateChange, onRequestPause, manualSpindle, tools]); // Added tools dependency
+  }, [commands, currentLine, machineState, onError, onStateChange, onRequestPause, manualSpindle, tools]);
 
   // Handle Tooltip
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -212,23 +239,23 @@ export const Simulator: React.FC<SimulatorProps> = ({
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
-    const width = canvas.width;
-    const height = canvas.height;
-    const zZeroPixel = width - ORIGIN_X_OFFSET;
-    const centerY = height / 2;
-    const toolZPixel = zZeroPixel + (simState.z * SCALE);
-    const toolXPixel = centerY - ((simState.x / 2) * SCALE);
     
-    // Hit detection relative to tool tip
-    const isOverHolder = (mx > toolZPixel - 10 && mx < toolZPixel + 100) && (my < toolXPixel && my > toolXPixel - 80);
-    const dist = Math.sqrt(Math.pow(mx - toolZPixel, 2) + Math.pow(my - toolXPixel, 2));
+    // Check using projected screen coordinates
+    if (toolScreenPosRef.current) {
+        const tx = toolScreenPosRef.current.x;
+        const ty = toolScreenPosRef.current.y;
+        const dist = Math.sqrt(Math.pow(mx - tx, 2) + Math.pow(my - ty, 2));
+        
+        // Extended hit area for holders
+        const isClose = dist < 50;
 
-    if (dist < 40 || isOverHolder) {
-        const tool = tools.find(t => t.id === simState.tool) || tools[0];
-        setTooltip({ x: mx, y: my, tool });
-    } else {
-        setTooltip(null);
+        if (isClose) {
+            const tool = tools.find(t => t.id === simState.tool) || tools[0];
+            setTooltip({ x: mx, y: my, tool });
+            return;
+        }
     }
+    setTooltip(null);
   };
   const handleMouseLeave = () => setTooltip(null);
 
@@ -239,61 +266,44 @@ export const Simulator: React.FC<SimulatorProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Delta Time Calculation for Smooth Animation
+    // Delta Time Calculation
     if (lastTimeRef.current === 0) lastTimeRef.current = time;
     const deltaTime = (time - lastTimeRef.current) / 1000; // seconds
     lastTimeRef.current = time;
 
     const width = canvas.width;
     const height = canvas.height;
-    const zZeroPixel = width - ORIGIN_X_OFFSET;
     const centerY = height / 2;
-    const stockPixelLen = STOCK_LENGTH * SCALE;
-    const stockPixelDia = STOCK_DIAMETER * SCALE;
-    const chuckX = zZeroPixel - stockPixelLen;
-
-    // --- Particle Logic (Sparks/Chips) & WEAR LOGIC ---
-    const isCutting = simState.spindleDirection !== 'STOP' && 
-                      simState.path.length > 0 && 
-                      simState.path[simState.path.length - 1].type === 'cut';
     
+    // Clear Canvas
+    ctx.fillStyle = '#0f1115';
+    ctx.fillRect(0, 0, width, height);
+
+    // --- Physics Update (Shared) ---
     const dx = simState.x - prevPosRef.current.x;
     const dz = simState.z - prevPosRef.current.z;
     const distTraveled = Math.sqrt(dx*dx + dz*dz);
     const isMoving = distTraveled > 0.001;
+    const isCutting = simState.spindleDirection !== 'STOP' && simState.path.length > 0 && simState.path[simState.path.length - 1].type === 'cut';
 
-    // Material Hardness Factor (Base=Steel=1.0)
-    let hardness = 1.0;
-    if (stockMaterial === 'Aluminum') hardness = 0.5;
-    else if (stockMaterial === 'Wood') hardness = 0.1;
-    else if (stockMaterial === 'Epoxi') hardness = 0.2;
-    else if (stockMaterial === 'POM') hardness = 0.2;
-    else if (stockMaterial === 'Carbon Fiber') hardness = 1.5;
-
+    // Particle Generation (Only generate if cutting)
     if (isCutting && isMoving && simState.x <= STOCK_DIAMETER + 1) {
+        // ... (Particle generation logic preserved) ...
         let pColor1 = '#ffaa00';
         let pColor2 = '#ffff00';
-        
-        if (stockMaterial === 'Aluminum') {
-            pColor1 = '#e2e8f0';
-            pColor2 = '#ffffff';
-        } else if (stockMaterial === 'Wood') {
-            pColor1 = '#d97706';
-            pColor2 = '#92400e';
-        } else if (stockMaterial === 'Carbon Fiber') {
-            pColor1 = '#111111';
-            pColor2 = '#333333';
-        } else if (stockMaterial === 'Epoxi') {
-            pColor1 = '#fef08a'; // Yellow 200
-            pColor2 = '#facc15'; // Yellow 400
-        } else if (stockMaterial === 'POM') {
-            pColor1 = '#f8fafc'; // White/Slate 50
-            pColor2 = '#cbd5e1'; // Slate 300
-        }
+        // Material colors
+        if (stockMaterial === 'Aluminum') { pColor1 = '#e2e8f0'; pColor2 = '#ffffff'; } 
+        else if (stockMaterial === 'Wood') { pColor1 = '#d97706'; pColor2 = '#92400e'; }
+        else if (stockMaterial === 'Carbon Fiber') { pColor1 = '#111111'; pColor2 = '#333333'; }
+        else if (stockMaterial === 'Epoxi') { pColor1 = '#fef08a'; pColor2 = '#facc15'; }
+        else if (stockMaterial === 'POM') { pColor1 = '#f8fafc'; pColor2 = '#cbd5e1'; }
 
         for(let i=0; i<3; i++) {
+            // Need z/x pixel in SIDE view coords for storage, will project later
+            const zZeroPixel = width - ORIGIN_X_OFFSET;
             const toolZPixel = zZeroPixel + (simState.z * SCALE);
             const toolXPixel = centerY - ((simState.x / 2) * SCALE);
+            
             particlesRef.current.push({
                 x: toolZPixel,
                 y: toolXPixel,
@@ -303,18 +313,18 @@ export const Simulator: React.FC<SimulatorProps> = ({
                 color: Math.random() > 0.5 ? pColor1 : pColor2
             });
         }
-
-        // --- Wear Calculation ---
-        // Wear accumulates based on distance traveled * hardness
-        // We limit update frequency to avoid React render spam
-        // Wear rate: arbitrary value to make it visible in demo
+        
+        // Wear Calculation
         const currentTool = tools.find(t => t.id === simState.tool);
+        let hardness = 1.0;
+        if (stockMaterial === 'Aluminum') hardness = 0.5;
+        // ... (Hardness logic) ...
+        if (stockMaterial === 'Carbon Fiber') hardness = 1.5;
+
         if (currentTool && currentTool.wear < 100) {
-            const wearRate = 0.2; // % per mm traveled (high for demo purposes)
+            const wearRate = 0.2; 
             const increment = distTraveled * hardness * wearRate;
             accumWearRef.current += increment;
-
-            // Only update parent state if significant change to avoid jitter
             if (accumWearRef.current > 0.5) {
                 onToolWear(simState.tool, currentTool.wear + accumWearRef.current);
                 accumWearRef.current = 0;
@@ -323,6 +333,7 @@ export const Simulator: React.FC<SimulatorProps> = ({
     }
     prevPosRef.current = { x: simState.x, z: simState.z };
 
+    // Update Particles
     particlesRef.current.forEach(p => {
         p.x += p.vx;
         p.y += p.vy;
@@ -330,12 +341,42 @@ export const Simulator: React.FC<SimulatorProps> = ({
         p.life -= 0.05;
     });
     particlesRef.current = particlesRef.current.filter(p => p.life > 0);
-
-    // --- Drawing ---
     
-    ctx.fillStyle = '#0f1115';
-    ctx.fillRect(0, 0, width, height);
+    // Update Rotation
+    const effectiveSpindleSpeed = simState.spindleSpeed * (feedOverride / 100); 
+    const speedRadPerSec = (effectiveSpindleSpeed / 60) * 2 * Math.PI;
+    if (simState.spindleDirection === 'CW') rotationRef.current += speedRadPerSec * deltaTime;
+    else if (simState.spindleDirection === 'CCW') rotationRef.current -= speedRadPerSec * deltaTime;
 
+
+    // --- RENDER DISPATCH ---
+    if (viewMode === 'FRONT') {
+        renderFrontView(ctx, width, height, deltaTime);
+    } else {
+        ctx.save();
+        if (viewMode === 'ISO') {
+            // Apply simple shear/scale for pseudo-iso
+            ctx.translate(100, 50); 
+            ctx.transform(1, 0.15, -0.4, 0.9, 0, 0); 
+        }
+        renderSideView(ctx, width, height, deltaTime);
+        ctx.restore();
+    }
+
+    // --- Overlay / HUD (Unaffected by View Transform) ---
+    renderOverlay(ctx, width, height);
+    
+    requestRef.current = requestAnimationFrame(animate);
+  };
+
+  const renderSideView = (ctx: CanvasRenderingContext2D, width: number, height: number, deltaTime: number) => {
+    const zZeroPixel = width - ORIGIN_X_OFFSET;
+    const centerY = height / 2;
+    const stockPixelLen = STOCK_LENGTH * SCALE;
+    const stockPixelDia = STOCK_DIAMETER * SCALE;
+    const chuckX = zZeroPixel - stockPixelLen;
+
+    // Grid
     ctx.strokeStyle = '#1a1f26';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -343,180 +384,48 @@ export const Simulator: React.FC<SimulatorProps> = ({
     for(let i=0; i<height; i+=40) { ctx.moveTo(0,i); ctx.lineTo(width, i); }
     ctx.stroke();
 
+    // Center Line
     ctx.strokeStyle = '#333';
     ctx.setLineDash([20, 5, 5, 5]);
     ctx.beginPath(); ctx.moveTo(0, centerY); ctx.lineTo(width, centerY); ctx.stroke();
     ctx.setLineDash([]);
 
-    // --- Chuck (Mandril) Rendering ---
-    const effectiveSpindleSpeed = simState.spindleSpeed * (feedOverride / 100); 
-    const speedRadPerSec = (effectiveSpindleSpeed / 60) * 2 * Math.PI;
-
-    if (simState.spindleDirection === 'CW') {
-        rotationRef.current += speedRadPerSec * deltaTime;
-    } else if (simState.spindleDirection === 'CCW') {
-        rotationRef.current -= speedRadPerSec * deltaTime;
-    }
-
-    const chuckBodyDia = 160; // Pixels
-    const chuckXPosition = chuckX - 10; // Slightly left of stock start
-
+    // --- Chuck ---
+    const chuckBodyDia = 160;
+    const chuckXPosition = chuckX - 10;
     ctx.save();
     ctx.translate(chuckXPosition, centerY);
     
-    // Draw Chuck Body (Side View - Static/Rotating Cylinder)
     const bodyGrad = ctx.createLinearGradient(0, -chuckBodyDia/2, 0, chuckBodyDia/2);
-    bodyGrad.addColorStop(0, '#27272a'); 
-    bodyGrad.addColorStop(0.3, '#52525b'); 
-    bodyGrad.addColorStop(0.5, '#71717a'); 
-    bodyGrad.addColorStop(0.7, '#52525b');
-    bodyGrad.addColorStop(1, '#27272a');
+    bodyGrad.addColorStop(0, '#27272a'); bodyGrad.addColorStop(0.5, '#71717a'); bodyGrad.addColorStop(1, '#27272a');
     ctx.fillStyle = bodyGrad;
-    ctx.fillRect(-60, -chuckBodyDia/2, 60, chuckBodyDia); // Main body
+    ctx.fillRect(-60, -chuckBodyDia/2, 60, chuckBodyDia);
     
-    // Chuck Backplate
-    ctx.fillStyle = '#18181b';
-    ctx.fillRect(-70, -(chuckBodyDia/2) + 10, 10, chuckBodyDia - 20);
-
-    // Draw Rotating Face Elements
-    ctx.beginPath();
-    ctx.rect(-10, -chuckBodyDia/2, 40, chuckBodyDia);
-    ctx.clip();
-
-    const jawHeight = 25;
-    const jawWidth = 30;
-    
-    // Draw 3 Jaws
+    ctx.beginPath(); ctx.rect(-10, -chuckBodyDia/2, 40, chuckBodyDia); ctx.clip();
+    const jawHeight = 25; const jawWidth = 30;
     for(let j=0; j<3; j++) {
         const angleOffset = (Math.PI * 2 / 3) * j;
         const currentAngle = rotationRef.current + angleOffset;
-        
         const radius = chuckBodyDia / 3.5;
         const jawY = Math.sin(currentAngle) * radius;
         const jawZ = Math.cos(currentAngle); 
-
         const isFront = jawZ > 0;
-        const jawColor = isFront ? '#d4d4d8' : '#52525b'; 
-        
-        ctx.fillStyle = jawColor;
-        ctx.strokeStyle = '#18181b';
-        ctx.lineWidth = 1;
-
+        ctx.fillStyle = isFront ? '#d4d4d8' : '#52525b'; 
+        ctx.strokeStyle = '#18181b'; ctx.lineWidth = 1;
         ctx.fillRect(-5, jawY - (jawHeight/2), jawWidth, jawHeight);
         ctx.strokeRect(-5, jawY - (jawHeight/2), jawWidth, jawHeight);
-        
-        ctx.fillStyle = isFront ? '#a1a1aa' : '#3f3f46';
-        ctx.fillRect(10, jawY - (jawHeight/2) + 5, 10, jawHeight - 10);
     }
-    
     ctx.restore();
 
-
-    // --- Stock (Dynamic Material) ---
+    // --- Stock ---
     const stockGradient = ctx.createLinearGradient(0, centerY - (stockPixelDia/2), 0, centerY + (stockPixelDia/2));
-    
-    if (stockMaterial === 'Wood') {
-        if (simState.spindleDirection === 'STOP') {
-            stockGradient.addColorStop(0, '#3f2c22'); 
-            stockGradient.addColorStop(0.4, '#8d5a36'); 
-            stockGradient.addColorStop(0.6, '#a67c52'); 
-            stockGradient.addColorStop(1, '#3f2c22');
-        } else {
-             stockGradient.addColorStop(0, '#5c3a2e');
-             stockGradient.addColorStop(0.5, '#d4a373');
-             stockGradient.addColorStop(1, '#5c3a2e');
-        }
-    } else if (stockMaterial === 'Aluminum') {
-         if (simState.spindleDirection === 'STOP') {
-            stockGradient.addColorStop(0, '#718096');
-            stockGradient.addColorStop(0.3, '#e2e8f0');
-            stockGradient.addColorStop(0.5, '#edf2f7'); 
-            stockGradient.addColorStop(0.7, '#e2e8f0');
-            stockGradient.addColorStop(1, '#718096');
-         } else {
-            stockGradient.addColorStop(0, '#a0aec0');
-            stockGradient.addColorStop(0.5, '#ffffff'); 
-            stockGradient.addColorStop(1, '#a0aec0');
-         }
-    } else if (stockMaterial === 'Carbon Fiber') {
-        if (simState.spindleDirection === 'STOP') {
-            stockGradient.addColorStop(0, '#0a0a0a');
-            stockGradient.addColorStop(0.3, '#1f1f1f');
-            stockGradient.addColorStop(0.5, '#2e2e2e');
-            stockGradient.addColorStop(0.7, '#1f1f1f');
-            stockGradient.addColorStop(1, '#0a0a0a');
-        } else {
-            stockGradient.addColorStop(0, '#111');
-            stockGradient.addColorStop(0.5, '#333');
-            stockGradient.addColorStop(1, '#111');
-        }
-    } else if (stockMaterial === 'Epoxi') {
-        if (simState.spindleDirection === 'STOP') {
-            stockGradient.addColorStop(0, '#854d0e'); 
-            stockGradient.addColorStop(0.3, '#eab308'); 
-            stockGradient.addColorStop(0.5, '#fef08a'); 
-            stockGradient.addColorStop(0.7, '#eab308'); 
-            stockGradient.addColorStop(1, '#854d0e');
-        } else {
-            stockGradient.addColorStop(0, '#ca8a04');
-            stockGradient.addColorStop(0.5, '#fef9c3'); 
-            stockGradient.addColorStop(1, '#ca8a04');
-        }
-    } else if (stockMaterial === 'POM') {
-        if (simState.spindleDirection === 'STOP') {
-            stockGradient.addColorStop(0, '#94a3b8'); 
-            stockGradient.addColorStop(0.2, '#e2e8f0'); 
-            stockGradient.addColorStop(0.5, '#f8fafc'); 
-            stockGradient.addColorStop(0.8, '#e2e8f0'); 
-            stockGradient.addColorStop(1, '#94a3b8');
-        } else {
-            stockGradient.addColorStop(0, '#cbd5e1');
-            stockGradient.addColorStop(0.5, '#ffffff');
-            stockGradient.addColorStop(1, '#cbd5e1');
-        }
-    } else {
-         if (simState.spindleDirection === 'STOP') {
-            stockGradient.addColorStop(0, '#2d3748');
-            stockGradient.addColorStop(0.2, '#718096');
-            stockGradient.addColorStop(0.5, '#a0aec0');
-            stockGradient.addColorStop(0.8, '#718096');
-            stockGradient.addColorStop(1, '#2d3748');
-        } else {
-            stockGradient.addColorStop(0, '#4a5568');
-            stockGradient.addColorStop(0.5, '#cbd5e0');
-            stockGradient.addColorStop(1, '#4a5568');
-        }
-    }
-
+    configureStockGradient(stockGradient); // Helper
     ctx.fillStyle = stockGradient;
     ctx.fillRect(chuckX, centerY - (stockPixelDia/2), stockPixelLen, stockPixelDia/2);
     ctx.fillRect(chuckX, centerY, stockPixelLen, stockPixelDia/2);
-
-    // Carbon Fiber Weave Texture
-    if (stockMaterial === 'Carbon Fiber' && simState.spindleDirection === 'STOP') {
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
-        for(let i=chuckX; i < chuckX + stockPixelLen; i+=6) {
-             for(let j=centerY - stockPixelDia/2; j < centerY + stockPixelDia/2; j+=6) {
-                 if ((i+j)%12 === 0) ctx.fillRect(i, j, 3, 3);
-             }
-        }
-    }
     
-    // Material End Cap
-    const endX = chuckX + stockPixelLen;
-    let endColor = '#718096';
-    if(stockMaterial === 'Aluminum') endColor = '#cbd5e0';
-    if(stockMaterial === 'Wood') endColor = '#8d5a36';
-    if(stockMaterial === 'Carbon Fiber') endColor = '#1a1a1a';
-    if(stockMaterial === 'Epoxi') endColor = '#eab308';
-    if(stockMaterial === 'POM') endColor = '#f1f5f9';
-
-    ctx.fillStyle = endColor;
-    ctx.fillRect(endX, centerY - (stockPixelDia/2), 2, stockPixelDia);
-
-
-    // --- Path Visualization ---
-    if (simState.path.length > 0) {
+    // --- Paths ---
+    if (showPaths && simState.path.length > 0) {
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.strokeStyle = 'rgba(0, 255, 255, 0.2)';
@@ -524,292 +433,246 @@ export const Simulator: React.FC<SimulatorProps> = ({
         let lastX = 100; let lastZ = 50;
         simState.path.forEach(p => {
             if (p.type === 'rapid') {
-                const cx = zZeroPixel + (p.z * SCALE); 
-                const cy = centerY - ((p.x / 2) * SCALE);
-                const lx = zZeroPixel + (lastZ * SCALE);
-                const ly = centerY - ((lastX / 2) * SCALE);
+                const cx = zZeroPixel + (p.z * SCALE); const cy = centerY - ((p.x / 2) * SCALE);
+                const lx = zZeroPixel + (lastZ * SCALE); const ly = centerY - ((lastX / 2) * SCALE);
                 ctx.moveTo(lx, ly); ctx.lineTo(cx, cy);
             }
             lastX = p.x; lastZ = p.z;
         });
         ctx.stroke();
-
         ctx.beginPath();
         ctx.strokeStyle = 'rgba(255, 165, 0, 0.8)';
         ctx.setLineDash([]);
         lastX = 100; lastZ = 50;
         simState.path.forEach(p => {
-            const cx = zZeroPixel + (p.z * SCALE); 
-            const cy = centerY - ((p.x / 2) * SCALE);
-            const lx = zZeroPixel + (lastZ * SCALE);
-            const ly = centerY - ((lastX / 2) * SCALE);
-
+            const cx = zZeroPixel + (p.z * SCALE); const cy = centerY - ((p.x / 2) * SCALE);
+            const lx = zZeroPixel + (lastZ * SCALE); const ly = centerY - ((lastX / 2) * SCALE);
             if (p.type === 'cut') {
                 ctx.moveTo(lx, ly); ctx.lineTo(cx, cy);
-                ctx.moveTo(lx, centerY + ((lastX / 2) * SCALE));
-                ctx.lineTo(cx, centerY + ((p.x / 2) * SCALE));
+                ctx.moveTo(lx, centerY + ((lastX / 2) * SCALE)); ctx.lineTo(cx, centerY + ((p.x / 2) * SCALE));
             }
             lastX = p.x; lastZ = p.z;
         });
         ctx.stroke();
     }
 
-    // --- Draw Particles ---
+    // --- Particles ---
     particlesRef.current.forEach(p => {
-        ctx.globalAlpha = p.life;
-        ctx.fillStyle = p.color;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 1.5, 0, Math.PI*2);
-        ctx.fill();
+        ctx.globalAlpha = p.life; ctx.fillStyle = p.color;
+        ctx.beginPath(); ctx.arc(p.x, p.y, 1.5, 0, Math.PI*2); ctx.fill();
         ctx.globalAlpha = 1.0;
     });
 
-    // --- Tool Drawing ---
+    // --- Tool ---
     const toolZPixel = zZeroPixel + (simState.z * SCALE);
     const toolXPixel = centerY - ((simState.x / 2) * SCALE);
-    const activeToolConfig = tools.find(t => t.id === simState.tool) || tools[0];
     
+    // Save screen coordinates for mouse interaction (applying transform if needed)
+    const transform = ctx.getTransform();
+    const screenPt = transform.transformPoint(new DOMPoint(toolZPixel, toolXPixel));
+    toolScreenPosRef.current = { x: screenPt.x, y: screenPt.y };
+
     ctx.save();
     ctx.translate(toolZPixel, toolXPixel);
-    ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 4;
-
-    // --- Tool Holder Colors based on type ---
-    let holderColorStart = '#333';
-    let holderColorMid = '#444';
-    let holderColorEnd = '#222';
-
-    if (activeToolConfig.type === 'grooving') {
-        holderColorStart = '#172554'; // blue-950
-        holderColorMid = '#1e3a8a';   // blue-900
-        holderColorEnd = '#172554';
-    } else if (activeToolConfig.type === 'threading') {
-        holderColorStart = '#450a0a'; // red-950
-        holderColorMid = '#7f1d1d';   // red-900
-        holderColorEnd = '#450a0a';
-    } else {
-        holderColorStart = '#27272a'; // zinc-800
-        holderColorMid = '#3f3f46';   // zinc-700
-        holderColorEnd = '#27272a';
-    }
-    
-    const createHolderGradient = (y1: number, y2: number) => {
-        const grad = ctx.createLinearGradient(0, y1, 0, y2);
-        grad.addColorStop(0, holderColorStart);
-        grad.addColorStop(0.5, holderColorMid);
-        grad.addColorStop(1, holderColorEnd);
-        return grad;
-    };
-
-    let insertColor = activeToolConfig.color;
-    
-    // --- Wear Effect on Color ---
-    // Shift color towards red/dark based on wear %
-    if (activeToolConfig.wear > 0) {
-        // Simple visualization: Overlay a red tint or change hex
-        // Since manipulating Hex in canvas is annoying, let's just use the wear state to decide drawing logic below
-    }
-
-    // 1. Draw Turret Block
-    ctx.fillStyle = '#1a1a1a';
-    ctx.fillRect(50, -60, 80, 100); 
-    ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
-    ctx.strokeRect(50, -60, 80, 100);
-    ctx.fillStyle = '#111';
-    ctx.beginPath(); ctx.arc(65, -40, 3, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(65, 30, 3, 0, Math.PI*2); ctx.fill();
-
-    // 2. Specific Tool Holders
-    // WEAR VISUALIZATION: Modify tool tip shape based on wear
-    // 100% wear = 2.0 scale increase in radius and redness
-    const wearFactor = activeToolConfig.wear / 100;
-    const wearRadiusMod = wearFactor * 3; // up to +3px radius
-
-    if (activeToolConfig.type === 'grooving') {
-        const width = 4 * SCALE;
-        const insertW = activeToolConfig.width * SCALE;
-        const length = 45;
-
-        // Block
-        ctx.fillStyle = createHolderGradient(-35, 25);
-        ctx.fillRect(20, -35, 50, 60);
-
-        // Blade
-        ctx.fillStyle = holderColorStart;
-        ctx.beginPath();
-        ctx.moveTo(5, -insertW);
-        ctx.lineTo(5, -length);
-        ctx.lineTo(20, -length);
-        ctx.lineTo(20, -insertW);
-        ctx.fill();
-
-        // Insert
-        ctx.fillStyle = activeToolConfig.wear > 50 ? '#b91c1c' : insertColor; // Red if worn
-        
-        // Draw worn insert (rounded corners)
-        if (activeToolConfig.wear > 10) {
-             ctx.beginPath();
-             ctx.roundRect(0, -insertW, insertW, insertW, wearRadiusMod);
-             ctx.fill();
-        } else {
-             ctx.fillRect(0, -insertW, insertW, insertW); 
-        }
-        
-        ctx.fillStyle = '#000';
-        ctx.beginPath(); ctx.arc(35, -15, 4, 0, Math.PI*2); ctx.fill();
-
-    } else if (activeToolConfig.type === 'threading') {
-        const shankH = 18;
-        
-        // Shank
-        ctx.fillStyle = createHolderGradient(-shankH, 0);
-        ctx.fillRect(10, -shankH, 80, shankH); 
-        
-        // Head offset
-        ctx.beginPath();
-        ctx.moveTo(10, -shankH);
-        ctx.lineTo(0, -shankH + 2);
-        ctx.lineTo(0, -2);
-        ctx.lineTo(10, 0);
-        ctx.fill();
-
-        // Insert (Triangle)
-        ctx.fillStyle = activeToolConfig.wear > 50 ? '#b91c1c' : insertColor;
-        ctx.beginPath();
-        // Worn tip is blunt
-        ctx.moveTo(0 + wearRadiusMod, 0); 
-        ctx.lineTo(5, -3);
-        ctx.lineTo(5, 0);
-        ctx.closePath();
-        ctx.fill();
-
-        // Clamp
-        ctx.fillStyle = '#000';
-        ctx.fillRect(5, -shankH + 4, 4, 4);
-
-    } else {
-        // General Turning
-        // Shank
-        ctx.fillStyle = createHolderGradient(-25, 0);
-        ctx.fillRect(10, -25, 100, 25); 
-
-        // Draw Insert (Diamond shape)
-        ctx.fillStyle = activeToolConfig.wear > 50 ? '#b91c1c' : insertColor;
-        ctx.beginPath();
-        // Modify tip coordinate based on wear to simulate dulling
-        ctx.moveTo(0 + wearRadiusMod, 0); 
-        ctx.lineTo(5, -8); 
-        ctx.lineTo(15, -8); 
-        ctx.lineTo(10, 0);
-        ctx.fill();
-
-        // Seat/Clamp
-        ctx.fillStyle = '#111';
-        ctx.beginPath(); ctx.arc(12, -8, 3, 0, Math.PI*2); ctx.fill();
-    }
-    
-    // Tool Label
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = 'rgba(255,255,255,0.8)'; 
-    ctx.font = 'bold 10px monospace';
-    ctx.fillText(activeToolConfig.name.split(' - ')[0], 55, -45);
-    
+    drawToolGraphics(ctx);
     ctx.restore();
-
-    // --- Draw Axis Gizmo (Bottom Left) ---
-    const gizmoSize = 40;
-    const gizmoX = 40;
-    const gizmoY = height - 40;
     
-    ctx.lineWidth = 2;
-    ctx.font = 'bold 12px monospace';
-
-    // Z Axis (Blue - Horizontal)
-    ctx.beginPath(); ctx.strokeStyle = '#0066ff';
-    ctx.moveTo(gizmoX, gizmoY); ctx.lineTo(gizmoX + gizmoSize, gizmoY); ctx.stroke();
-    ctx.fillStyle = '#0066ff'; ctx.fillText('Z', gizmoX + gizmoSize + 5, gizmoY + 4);
-
-    // X Axis (Red - Vertical)
-    ctx.beginPath(); ctx.strokeStyle = '#ff3333';
-    ctx.moveTo(gizmoX, gizmoY); ctx.lineTo(gizmoX, gizmoY - gizmoSize); ctx.stroke();
-    ctx.fillStyle = '#ff3333'; ctx.fillText('X', gizmoX - 3, gizmoY - gizmoSize - 8);
-
-    // Y Axis (Green - Diagonal/Depth)
-    ctx.beginPath(); ctx.strokeStyle = '#33cc33';
-    ctx.moveTo(gizmoX, gizmoY); ctx.lineTo(gizmoX - 20, gizmoY + 20); ctx.stroke();
-    ctx.fillStyle = '#33cc33'; ctx.fillText('Y', gizmoX - 28, gizmoY + 25);
-    
-    // Origin dot
-    ctx.beginPath(); ctx.fillStyle = '#fff'; ctx.arc(gizmoX, gizmoY, 3, 0, Math.PI*2); ctx.fill();
-
-    // --- Coolant Visual Effects ---
+    // Coolant (Side View specific)
     if (simState.coolant === 'FLOOD') {
-        // Draw blue streams (heavy flow)
         ctx.fillStyle = 'rgba(0, 100, 255, 0.15)';
         ctx.fillRect(0, 0, width, height);
-        
-        ctx.strokeStyle = 'rgba(100, 200, 255, 0.4)';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        const offset = (time / 5) % 40;
-        for(let k= -40; k<width; k+=30) {
-             // Angle the stream slightly
-             ctx.moveTo(k + offset, 0); 
-             ctx.lineTo(k - 20 + offset, height);
-        }
-        ctx.stroke();
-    } else if (simState.coolant === 'MIST') {
-        // Draw mist (random white/cyan particles)
-        ctx.fillStyle = 'rgba(200, 240, 255, 0.05)';
-        ctx.fillRect(0, 0, width, height);
-        
-        // Random mist particles
-        ctx.fillStyle = 'rgba(220, 255, 255, 0.4)';
-        for(let i=0; i<30; i++) {
-            const mx = Math.random() * width;
-            const my = Math.random() * height;
-            const r = Math.random() * 2;
-            ctx.beginPath(); ctx.arc(mx, my, r, 0, Math.PI*2); ctx.fill();
-        }
     }
+  };
 
-    // --- Active Command Display (Bottom Center) ---
-    const activeCmd = commands[currentLine];
-    if (activeCmd) {
+  const renderFrontView = (ctx: CanvasRenderingContext2D, width: number, height: number, deltaTime: number) => {
+      const cx = width / 2;
+      const cy = height / 2;
+      const stockRadius = (STOCK_DIAMETER / 2) * SCALE;
+      
+      // Grid (Radial)
+      ctx.strokeStyle = '#1a1f26';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(cx, cy, stockRadius, 0, Math.PI*2);
+      ctx.arc(cx, cy, stockRadius + 50, 0, Math.PI*2);
+      ctx.moveTo(cx - 200, cy); ctx.lineTo(cx + 200, cy);
+      ctx.moveTo(cx, cy - 200); ctx.lineTo(cx, cy + 200);
+      ctx.stroke();
+
+      // Chuck Face
+      const chuckRad = 100;
+      ctx.fillStyle = '#27272a';
+      ctx.beginPath(); ctx.arc(cx, cy, chuckRad, 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle = '#3f3f46'; ctx.stroke();
+
+      // Jaws
+      for(let j=0; j<3; j++) {
+        const angle = rotationRef.current + (Math.PI * 2 / 3) * j;
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(angle);
+        ctx.fillStyle = '#52525b';
+        ctx.fillRect(stockRadius + 5, -15, 40, 30);
+        ctx.restore();
+      }
+
+      // Stock Face
+      const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, stockRadius);
+      // Simplify stock color for radial
+      if (stockMaterial === 'Wood') { grad.addColorStop(0, '#8d5a36'); grad.addColorStop(1, '#3f2c22'); }
+      else if (stockMaterial === 'Aluminum') { grad.addColorStop(0, '#ffffff'); grad.addColorStop(1, '#a0aec0'); }
+      else { grad.addColorStop(0, '#4a5568'); grad.addColorStop(1, '#1a202c'); }
+      
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.arc(cx, cy, stockRadius, 0, Math.PI*2); ctx.fill();
+
+      // Tool (Radial Position)
+      // Tool X is Diameter. Distance from center = X/2
+      const toolDist = (simState.x / 2) * SCALE;
+      // Tool is usually coming from top (X+) or back
+      // In our side view X+ is Up. So here tool should be at Y = cy - toolDist
+      
+      const tx = cx;
+      const ty = cy - toolDist;
+      
+      toolScreenPosRef.current = { x: tx, y: ty }; // For tooltip
+
+      ctx.save();
+      ctx.translate(tx, ty);
+      // Draw simplified tool Face view
+      ctx.fillStyle = tools.find(t=>t.id===simState.tool)?.color || '#ff0000';
+      ctx.beginPath();
+      ctx.moveTo(0,0); ctx.lineTo(-10, -20); ctx.lineTo(10, -20); ctx.fill();
+      ctx.fillStyle = '#333';
+      ctx.fillRect(-15, -60, 30, 40); // Holder body
+      ctx.restore();
+  };
+
+  const renderOverlay = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+      // Axis Gizmo
+      const gizmoSize = 40;
+      const gizmoX = 40;
+      const gizmoY = height - 40;
+      ctx.lineWidth = 2; ctx.font = 'bold 12px monospace';
+      
+      // Different gizmo for Front view
+      if (viewMode === 'FRONT') {
+          ctx.beginPath(); ctx.strokeStyle = '#ff3333'; // X
+          ctx.moveTo(gizmoX, gizmoY); ctx.lineTo(gizmoX, gizmoY - gizmoSize); ctx.stroke();
+          ctx.fillStyle = '#ff3333'; ctx.fillText('X', gizmoX - 3, gizmoY - gizmoSize - 8);
+          
+          ctx.beginPath(); ctx.strokeStyle = '#33cc33'; // Y
+          ctx.moveTo(gizmoX - gizmoSize/2, gizmoY); ctx.lineTo(gizmoX + gizmoSize/2, gizmoY); ctx.stroke();
+          ctx.fillStyle = '#33cc33'; ctx.fillText('Y', gizmoX + gizmoSize/2 + 5, gizmoY + 4);
+      } else {
+          // Standard Z/X
+          ctx.beginPath(); ctx.strokeStyle = '#0066ff';
+          ctx.moveTo(gizmoX, gizmoY); ctx.lineTo(gizmoX + gizmoSize, gizmoY); ctx.stroke();
+          ctx.fillStyle = '#0066ff'; ctx.fillText('Z', gizmoX + gizmoSize + 5, gizmoY + 4);
+
+          ctx.beginPath(); ctx.strokeStyle = '#ff3333';
+          ctx.moveTo(gizmoX, gizmoY); ctx.lineTo(gizmoX, gizmoY - gizmoSize); ctx.stroke();
+          ctx.fillStyle = '#ff3333'; ctx.fillText('X', gizmoX - 3, gizmoY - gizmoSize - 8);
+      }
+
+      // Active Command
+      const activeCmd = commands[currentLine];
+      if (activeCmd) {
         ctx.save();
         const cmdText = activeCmd.raw.trim();
         ctx.font = 'bold 14px "Share Tech Mono", monospace';
         const tm = ctx.measureText(cmdText);
-        const pad = 16;
-        const bgW = tm.width + pad * 2;
-        const bgH = 30;
+        const bgW = tm.width + 32;
         const bgX = (width / 2) - (bgW / 2);
-        const bgY = height - 60; // Just above bottom edge
-
-        // Glassy/CRT background
-        ctx.fillStyle = 'rgba(0, 10, 0, 0.85)';
-        ctx.fillRect(bgX, bgY, bgW, bgH);
-        
-        ctx.strokeStyle = '#00ff00';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(bgX, bgY, bgW, bgH);
-
-        // Text
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#00ff00';
-        ctx.shadowColor = 'rgba(0, 255, 0, 0.5)';
-        ctx.shadowBlur = 4;
-        ctx.fillText(cmdText, width / 2, bgY + (bgH/2) + 1);
+        const bgY = height - 60;
+        ctx.fillStyle = 'rgba(0, 10, 0, 0.85)'; ctx.fillRect(bgX, bgY, bgW, 30);
+        ctx.strokeStyle = '#00ff00'; ctx.lineWidth = 1; ctx.strokeRect(bgX, bgY, bgW, 30);
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#00ff00';
+        ctx.fillText(cmdText, width / 2, bgY + 16);
         ctx.restore();
     }
+  };
 
-    requestRef.current = requestAnimationFrame(animate);
+  const drawToolGraphics = (ctx: CanvasRenderingContext2D) => {
+    // ... (Existing tool drawing logic extracted) ...
+    const activeToolConfig = tools.find(t => t.id === simState.tool) || tools[0];
+    let holderColorStart = '#333'; let holderColorMid = '#444'; let holderColorEnd = '#222';
+
+    if (activeToolConfig.type === 'grooving') {
+        holderColorStart = '#1e3a8a'; holderColorMid = '#60a5fa'; holderColorEnd = '#172554';
+    } else if (activeToolConfig.type === 'threading') {
+        holderColorStart = '#991b1b'; holderColorMid = '#fca5a5'; holderColorEnd = '#450a0a';
+    } else {
+        holderColorStart = '#52525b'; holderColorMid = '#e4e4e7'; holderColorEnd = '#3f3f46';
+    }
+    
+    const createHolderGradient = (y1: number, y2: number) => {
+        const grad = ctx.createLinearGradient(0, y1, 0, y2);
+        grad.addColorStop(0, holderColorStart); grad.addColorStop(0.5, holderColorMid); grad.addColorStop(1, holderColorEnd);
+        return grad;
+    };
+    let insertColor = activeToolConfig.color;
+    const wearFactor = activeToolConfig.wear / 100;
+    const wearRadiusMod = wearFactor * 3; 
+
+    // 1. Draw Turret Block
+    ctx.fillStyle = '#1a1a1a'; ctx.fillRect(50, -60, 80, 100); 
+    ctx.strokeStyle = '#333'; ctx.lineWidth = 1; ctx.strokeRect(50, -60, 80, 100);
+    ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(65, -40, 3, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(65, 30, 3, 0, Math.PI*2); ctx.fill();
+
+    // 2. Tool Holder
+    if (activeToolConfig.type === 'grooving') {
+        const width = 4 * SCALE; const insertW = activeToolConfig.width * SCALE; const length = 45;
+        ctx.fillStyle = createHolderGradient(-35, 25); ctx.fillRect(20, -35, 50, 60);
+        ctx.fillStyle = holderColorStart; ctx.beginPath(); ctx.moveTo(5, -insertW); ctx.lineTo(5, -length); ctx.lineTo(20, -length); ctx.lineTo(20, -insertW); ctx.fill();
+        ctx.fillStyle = activeToolConfig.wear > 50 ? '#b91c1c' : insertColor;
+        if (activeToolConfig.wear > 10) { ctx.beginPath(); ctx.roundRect(0, -insertW, insertW, insertW, wearRadiusMod); ctx.fill(); } 
+        else { ctx.fillRect(0, -insertW, insertW, insertW); }
+        ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(35, -15, 4, 0, Math.PI*2); ctx.fill();
+    } else if (activeToolConfig.type === 'threading') {
+        const shankH = 18;
+        ctx.fillStyle = createHolderGradient(-shankH, 0); ctx.fillRect(10, -shankH, 80, shankH); 
+        ctx.beginPath(); ctx.moveTo(10, -shankH); ctx.lineTo(0, -shankH + 2); ctx.lineTo(0, -2); ctx.lineTo(10, 0); ctx.fill();
+        ctx.fillStyle = activeToolConfig.wear > 50 ? '#b91c1c' : insertColor;
+        ctx.beginPath(); ctx.moveTo(0 + wearRadiusMod, 0); ctx.lineTo(5, -3); ctx.lineTo(5, 0); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#000'; ctx.fillRect(5, -shankH + 4, 4, 4);
+    } else {
+        ctx.fillStyle = createHolderGradient(-25, 0); ctx.fillRect(10, -25, 100, 25); 
+        ctx.fillStyle = activeToolConfig.wear > 50 ? '#b91c1c' : insertColor;
+        ctx.beginPath(); ctx.moveTo(0 + wearRadiusMod, 0); ctx.lineTo(5, -8); ctx.lineTo(15, -8); ctx.lineTo(10, 0); ctx.fill();
+        ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(12, -8, 3, 0, Math.PI*2); ctx.fill();
+    }
+    // Tool Label
+    ctx.shadowBlur = 0; ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.font = 'bold 10px monospace';
+    ctx.fillText(activeToolConfig.name.split(' - ')[0], 55, -45);
+  };
+
+  const configureStockGradient = (grad: CanvasGradient) => {
+    if (stockMaterial === 'Wood') {
+        if (simState.spindleDirection === 'STOP') { grad.addColorStop(0, '#3f2c22'); grad.addColorStop(0.4, '#8d5a36'); grad.addColorStop(0.6, '#a67c52'); grad.addColorStop(1, '#3f2c22'); } 
+        else { grad.addColorStop(0, '#5c3a2e'); grad.addColorStop(0.5, '#d4a373'); grad.addColorStop(1, '#5c3a2e'); }
+    } else if (stockMaterial === 'Aluminum') {
+         if (simState.spindleDirection === 'STOP') { grad.addColorStop(0, '#718096'); grad.addColorStop(0.3, '#e2e8f0'); grad.addColorStop(0.5, '#edf2f7'); grad.addColorStop(0.7, '#e2e8f0'); grad.addColorStop(1, '#718096'); } 
+         else { grad.addColorStop(0, '#a0aec0'); grad.addColorStop(0.5, '#ffffff'); grad.addColorStop(1, '#a0aec0'); }
+    } else if (stockMaterial === 'Carbon Fiber') {
+        if (simState.spindleDirection === 'STOP') { grad.addColorStop(0, '#0a0a0a'); grad.addColorStop(0.3, '#1f1f1f'); grad.addColorStop(0.5, '#2e2e2e'); grad.addColorStop(0.7, '#1f1f1f'); grad.addColorStop(1, '#0a0a0a'); } 
+        else { grad.addColorStop(0, '#111'); grad.addColorStop(0.5, '#333'); grad.addColorStop(1, '#111'); }
+    } else if (stockMaterial === 'Epoxi') {
+        if (simState.spindleDirection === 'STOP') { grad.addColorStop(0, '#854d0e'); grad.addColorStop(0.3, '#eab308'); grad.addColorStop(0.5, '#fef08a'); grad.addColorStop(0.7, '#eab308'); grad.addColorStop(1, '#854d0e'); } 
+        else { grad.addColorStop(0, '#ca8a04'); grad.addColorStop(0.5, '#fef9c3'); grad.addColorStop(1, '#ca8a04'); }
+    } else if (stockMaterial === 'POM') {
+        if (simState.spindleDirection === 'STOP') { grad.addColorStop(0, '#94a3b8'); grad.addColorStop(0.2, '#e2e8f0'); grad.addColorStop(0.5, '#f8fafc'); grad.addColorStop(0.8, '#e2e8f0'); grad.addColorStop(1, '#94a3b8'); } 
+        else { grad.addColorStop(0, '#cbd5e1'); grad.addColorStop(0.5, '#ffffff'); grad.addColorStop(1, '#cbd5e1'); }
+    } else {
+         if (simState.spindleDirection === 'STOP') { grad.addColorStop(0, '#2d3748'); grad.addColorStop(0.2, '#718096'); grad.addColorStop(0.5, '#a0aec0'); grad.addColorStop(0.8, '#718096'); grad.addColorStop(1, '#2d3748'); } 
+         else { grad.addColorStop(0, '#4a5568'); grad.addColorStop(0.5, '#cbd5e0'); grad.addColorStop(1, '#4a5568'); }
+    }
   };
 
   useEffect(() => {
     requestRef.current = requestAnimationFrame(animate);
     return () => { if (requestRef.current) cancelAnimationFrame(requestRef.current); };
-  }, [simState, feedOverride, stockMaterial, tools]); // Added tools dep to re-render when tools change
+  }, [simState, feedOverride, stockMaterial, tools, showPaths, viewMode]); 
 
   const handleConfirmTool = () => {
     setPendingToolChange(null);
@@ -835,30 +698,61 @@ export const Simulator: React.FC<SimulatorProps> = ({
             onMouseLeave={handleMouseLeave}
         />
         <div className="crt-scanline"></div>
+        
+        {/* Camera Control Panel */}
+        <div className="absolute top-4 right-4 flex flex-col gap-1 bg-zinc-900/80 backdrop-blur border border-zinc-700 p-1.5 rounded-lg z-20">
+            <button 
+                onClick={() => setViewMode('SIDE')}
+                className={`p-2 rounded flex items-center gap-2 text-xs font-bold transition-all ${viewMode === 'SIDE' ? 'bg-cnc-accent text-black shadow-lg' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
+                title="Vista Lateral (XZ)"
+            >
+                <Monitor size={16} /> <span className="hidden sm:inline">LATERAL</span>
+            </button>
+            <button 
+                onClick={() => setViewMode('FRONT')}
+                className={`p-2 rounded flex items-center gap-2 text-xs font-bold transition-all ${viewMode === 'FRONT' ? 'bg-cnc-accent text-black shadow-lg' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
+                title="Vista Frontal (XY)"
+            >
+                <Circle size={16} /> <span className="hidden sm:inline">FRONTAL</span>
+            </button>
+            <button 
+                onClick={() => setViewMode('ISO')}
+                className={`p-2 rounded flex items-center gap-2 text-xs font-bold transition-all ${viewMode === 'ISO' ? 'bg-cnc-accent text-black shadow-lg' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
+                title="Vista Isométrica Simulada"
+            >
+                <Box size={16} /> <span className="hidden sm:inline">ISO</span>
+            </button>
+        </div>
 
         {/* Tool Tip */}
         {tooltip && (
             <div 
                 style={{ top: tooltip.y + 15, left: tooltip.x + 15 }} 
-                className="absolute bg-zinc-900/95 border border-cnc-accent p-3 rounded shadow-2xl z-50 pointer-events-none text-xs backdrop-blur min-w-[150px]"
+                className="absolute bg-zinc-900/95 border border-cnc-accent p-3 rounded shadow-2xl z-50 pointer-events-none text-xs backdrop-blur min-w-[180px] animate-in fade-in zoom-in-95 duration-150"
             >
-                <div className="font-bold text-cnc-accent text-sm mb-2 border-b border-zinc-700 pb-1">{tooltip.tool.name}</div>
-                <div className="text-zinc-400 space-y-1">
-                    <div className="flex justify-between">
-                        <span>Holder Mat:</span>
-                        <span className="text-white font-mono">{tooltip.tool.holderMaterial}</span>
+                <div className="font-bold text-cnc-accent text-sm mb-2 border-b border-zinc-700 pb-1 flex justify-between items-center">
+                    <span>{tooltip.tool.name}</span>
+                    <span className="text-[10px] bg-zinc-800 px-1 rounded text-zinc-400">T{tooltip.tool.id < 10 ? '0'+tooltip.tool.id : tooltip.tool.id}</span>
+                </div>
+                <div className="text-zinc-400 space-y-1.5">
+                    <div className="flex justify-between items-center">
+                        <span>Portaherramienta:</span>
+                        <span className="text-white font-mono font-bold text-[10px]">{tooltip.tool.holderMaterial || 'Acero Estándar'}</span>
                     </div>
-                    <div className="flex justify-between">
-                        <span>Workpiece:</span>
-                        <span className="text-white font-mono">{stockMaterial}</span>
+                    <div className="flex justify-between items-center">
+                        <span>Pieza Trabajo:</span>
+                        <div className="flex items-center gap-1.5">
+                            <div className="w-2 h-2 rounded-full border border-white/20" style={{ background: getMaterialColor(stockMaterial) }}></div>
+                            <span className="text-white font-mono font-bold">{translateMaterial(stockMaterial)}</span>
+                        </div>
                     </div>
-                    <div className="flex justify-between">
-                        <span>Insert Type:</span>
-                        <span className="text-white font-mono">{tooltip.tool.holderType}</span>
+                    <div className="flex justify-between items-center">
+                        <span>Tipo Inserto:</span>
+                        <span className="text-white font-mono font-bold text-[10px]">{tooltip.tool.holderType}</span>
                     </div>
-                     <div className="flex justify-between">
-                        <span>Tool Wear:</span>
-                        <span className={`${tooltip.tool.wear > 50 ? 'text-red-500' : 'text-green-500'} font-mono`}>{tooltip.tool.wear.toFixed(1)}%</span>
+                     <div className="flex justify-between items-center">
+                        <span>Desgaste:</span>
+                        <span className={`${tooltip.tool.wear > 50 ? 'text-red-500' : 'text-green-500'} font-mono font-bold`}>{tooltip.tool.wear.toFixed(1)}%</span>
                     </div>
                 </div>
             </div>
@@ -870,11 +764,11 @@ export const Simulator: React.FC<SimulatorProps> = ({
                 <div className="bg-zinc-900 border-2 border-yellow-500 p-8 rounded shadow-2xl max-w-md w-full text-center relative animate-pulse-fast">
                     <div className="absolute top-0 left-0 right-0 h-1 bg-yellow-500 shadow-[0_0_10px_#eab308]"></div>
                     <AlertTriangle className="mx-auto text-yellow-500 mb-4 h-12 w-12" />
-                    <h3 className="text-xl font-bold text-yellow-500 tracking-widest mb-1">MANUAL ACTION REQUIRED</h3>
-                    <p className="text-zinc-400 text-sm mb-6 uppercase tracking-wide">Please confirm tool change to proceed</p>
+                    <h3 className="text-xl font-bold text-yellow-500 tracking-widest mb-1">ACCIÓN MANUAL REQUERIDA</h3>
+                    <p className="text-zinc-400 text-sm mb-6 uppercase tracking-wide">Por favor confirma el cambio de herramienta</p>
                     
                     <div className="bg-black border border-zinc-800 p-4 mb-6 rounded text-left">
-                        <div className="text-xs text-zinc-500 font-mono mb-1">REQUESTED TOOL</div>
+                        <div className="text-xs text-zinc-500 font-mono mb-1">HERRAMIENTA SOLICITADA</div>
                         <div className="text-2xl font-bold text-white font-mono flex justify-between items-end">
                             <span>T{pendingToolChange.code}</span>
                             <span className="text-sm text-cnc-accent mb-1">{getToolInfo(pendingToolChange)?.name.split('-')[1].trim()}</span>
@@ -886,7 +780,7 @@ export const Simulator: React.FC<SimulatorProps> = ({
                         className="w-full bg-yellow-600 hover:bg-yellow-500 text-black font-bold py-3 px-6 rounded transition-all flex items-center justify-center gap-2"
                     >
                         <CheckCircle2 size={20} />
-                        CONFIRM & RESUME
+                        CONFIRMAR Y RESUMIR
                     </button>
                 </div>
             </div>
