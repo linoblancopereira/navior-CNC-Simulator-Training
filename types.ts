@@ -27,7 +27,7 @@ export interface SimulationState {
   toolRadiusComp: 'OFF' | 'LEFT' | 'RIGHT'; // G40/G41/G42 Status
   positioningMode: 'ABS' | 'INC'; // G90/G91 Status
   coolant: 'OFF' | 'MIST' | 'FLOOD';
-  path: { x: number; z: number; type: 'cut' | 'rapid' }[];
+  path: { x: number; z: number; cx?: number; cz?: number; type: 'cut' | 'rapid' }[];
 }
 
 export interface Lesson {

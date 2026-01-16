@@ -6,7 +6,7 @@ import { Simulator } from './components/Simulator';
 import { GeminiTutor } from './components/GeminiTutor';
 import { CadImporter } from './components/CadImporter';
 import { MachineState, SimulationState, MaterialType, ToolConfig } from './types';
-import { Play, Pause, RotateCcw, RotateCw, Layout, Gauge, AlertTriangle, XCircle, Terminal, Layers, Octagon, Ban, Droplets, Ruler, Settings, Wrench, RefreshCw, CloudDownload, Edit3, Link2, Crosshair, PenTool } from 'lucide-react';
+import { Play, Pause, RotateCcw, RotateCw, Layout, Gauge, AlertTriangle, XCircle, Terminal, Layers, Octagon, Ban, Droplets, Ruler, Settings, Wrench, RefreshCw, CloudDownload, Edit3, Link2, Crosshair, PenTool, Home } from 'lucide-react';
 
 const ShortcutButton = ({ k, label, icon, onClick }: { k: string, label: string, icon: React.ReactNode, onClick: () => void }) => (
     <button onClick={onClick} className="flex flex-col items-center justify-center p-2 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors group relative min-w-[60px]">
@@ -26,6 +26,7 @@ export default function App() {
   
   // CAD Import Modal State
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
   // Aspire Simulation States
   const [showPaths, setShowPaths] = useState(true);
@@ -42,9 +43,12 @@ export default function App() {
       dir: 'STOP',
       speed: 1000
   });
+  
+  // Home Position Config
+  const [homePosition, setHomePosition] = useState({ x: 100, z: 50 });
 
   const [simState, setSimState] = useState<SimulationState>({
-    x: 0, z: 0, feedRate: 0, spindleSpeed: 0, spindleDirection: 'STOP',
+    x: homePosition.x, z: homePosition.z, feedRate: 0, spindleSpeed: 0, spindleDirection: 'STOP',
     tool: 1, activeToolOffset: 0, toolRadiusComp: 'OFF', positioningMode: 'ABS', coolant: 'OFF', path: []
   });
 
@@ -62,8 +66,6 @@ export default function App() {
   // Keyboard Shortcuts for Aspire Simulation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-        // We use some logic to avoid conflict with browser keys if possible, though F11 is usually reserved.
-        
         if (e.key === 'F11' || e.key === 'F12') {
             e.preventDefault();
             setShowPaths(prev => !prev);
@@ -105,8 +107,6 @@ export default function App() {
     let interval: any;
     if (machineState === MachineState.RUNNING) {
         const baseDelay = 500;
-        // Use feedOverride to adjust execution speed
-        // 100% = 500ms, 150% = 333ms, 10% = 5000ms
         const delay = feedOverride > 0 ? baseDelay * (100 / feedOverride) : 100000;
 
         interval = setInterval(() => {
@@ -136,39 +136,21 @@ export default function App() {
       if (machineState !== MachineState.ALARM) { 
           setMachineState(MachineState.ALARM); 
           setErrorMessage(msg); 
-          setManualSpindle({dir: 'STOP', speed: 0}); // Safety stop
+          setManualSpindle({dir: 'STOP', speed: 0}); 
       } 
   };
   
   const updateToolWear = (toolId: number, wearAmount: number) => {
     setTools(prev => prev.map(t => {
-        if (t.id === toolId) {
-            return { ...t, wear: Math.min(100, Math.max(0, wearAmount)) };
-        }
+        if (t.id === toolId) { return { ...t, wear: Math.min(100, Math.max(0, wearAmount)) }; }
         return t;
     }));
   };
 
-  const handleResetWear = () => {
-     updateToolWear(simState.tool, 0);
-  };
+  const handleResetWear = () => { updateToolWear(simState.tool, 0); };
 
   const activeToolConfig = tools.find(t => t.id === simState.tool) || tools[0];
 
-  // Helper to translate MaterialType to Spanish for display
-  const translateMaterial = (mat: MaterialType) => {
-      switch(mat) {
-          case 'Steel': return 'Acero';
-          case 'Aluminum': return 'Aluminio';
-          case 'Wood': return 'Madera';
-          case 'Carbon Fiber': return 'Fibra Carbono';
-          case 'Epoxi': return 'Epoxi';
-          case 'POM': return 'POM (Acetal)';
-          default: return mat;
-      }
-  };
-
-  // Helper to translate MachineState
   const translateState = (state: MachineState) => {
       switch(state) {
           case MachineState.IDLE: return 'INACTIVO';
@@ -181,8 +163,6 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-black text-zinc-300 font-sans overflow-hidden">
-      
-      {/* Aspire Notification Toast */}
       {aspireToast && (
           <div className="fixed bottom-10 left-1/2 transform -translate-x-1/2 bg-zinc-800 border border-cnc-accent text-white px-6 py-3 rounded-lg shadow-2xl z-[100] animate-in slide-in-from-bottom-5 fade-in duration-200 flex items-center gap-3">
               <div className="w-2 h-2 rounded-full bg-cnc-accent animate-pulse"></div>
@@ -190,302 +170,114 @@ export default function App() {
           </div>
       )}
 
-      {/* CAD Importer Modal */}
-      <CadImporter 
-        isOpen={isImportModalOpen} 
-        onClose={() => setIsImportModalOpen(false)}
-        onCodeGenerated={(generatedCode) => {
-            setCode(generatedCode);
-            handleReset();
-        }}
-      />
+      {/* Settings Modal */}
+      {isSettingsModalOpen && (
+          <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in">
+              <div className="bg-cnc-900 border border-cnc-700 p-6 rounded-xl w-96 shadow-2xl relative">
+                  <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2 border-b border-cnc-800 pb-4">
+                      <Settings className="text-cnc-accent" size={24} /> 
+                      <span className="tracking-wider">CONFIGURACIÓN</span>
+                  </h3>
+                  <div className="space-y-6">
+                      <div className="bg-zinc-800/30 p-4 rounded-lg border border-zinc-800">
+                        <div className="flex items-center gap-2 mb-3 text-cnc-accent">
+                            <Wrench size={16} />
+                            <h4 className="font-bold text-xs uppercase">Posición Home (G28)</h4>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1.5">Eje X (mm)</label>
+                                <input type="number" value={homePosition.x} onChange={(e) => setHomePosition({...homePosition, x: parseFloat(e.target.value) || 0})} className="w-full bg-black border border-zinc-700 rounded px-3 py-2 text-white font-mono text-sm focus:border-cnc-accent outline-none" />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1.5">Eje Z (mm)</label>
+                                <input type="number" value={homePosition.z} onChange={(e) => setHomePosition({...homePosition, z: parseFloat(e.target.value) || 0})} className="w-full bg-black border border-zinc-700 rounded px-3 py-2 text-white font-mono text-sm focus:border-cnc-accent outline-none" />
+                            </div>
+                        </div>
+                        <p className="text-[10px] text-zinc-500 mt-2 leading-relaxed">Define las coordenadas absolutas de la posición de referencia de la máquina. G28 enviará la herramienta aquí.</p>
+                      </div>
+                  </div>
+                  <div className="mt-8 flex justify-end gap-2">
+                      <button onClick={() => setIsSettingsModalOpen(false)} className="px-4 py-2 bg-cnc-accent hover:bg-yellow-500 text-black font-bold rounded text-xs tracking-wider transition-colors">GUARDAR Y CERRAR</button>
+                  </div>
+              </div>
+          </div>
+      )}
 
-      {/* Sidebar */}
+      <CadImporter isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} onCodeGenerated={(generatedCode) => { setCode(generatedCode); handleReset(); }} />
+
       <aside className="w-64 bg-zinc-900/80 backdrop-blur-sm border-r border-zinc-800 flex flex-col z-10">
         <div className="p-4 border-b border-zinc-800 flex items-center gap-2 bg-gradient-to-r from-zinc-900 to-zinc-800">
             <div className="bg-cnc-accent text-black p-1 rounded"><Layout size={18} /></div>
             <h1 className="font-bold text-lg tracking-wider text-white">A CNC DE LINO</h1>
         </div>
-        
         <div className="flex-1 overflow-y-auto p-2">
             <div className="text-[10px] font-bold text-zinc-500 mb-2 px-3 uppercase tracking-widest mt-2">Módulos de Formación</div>
             {LESSONS.map(lesson => (
-                <button
-                    key={lesson.id}
-                    onClick={() => setCurrentLessonId(lesson.id)}
-                    className={`w-full text-left px-3 py-3 rounded-lg mb-1 text-sm flex items-center gap-3 transition-all duration-200 group
-                        ${currentLessonId === lesson.id 
-                            ? 'bg-zinc-800/80 text-white border-l-2 border-cnc-accent shadow-lg' 
-                            : 'text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-200'}`}
-                >
-                    <span className={`w-6 h-6 rounded flex items-center justify-center text-xs font-mono 
-                        ${currentLessonId === lesson.id ? 'bg-cnc-accent text-black' : 'bg-zinc-800 group-hover:bg-zinc-700'}`}>
-                        {lesson.module}
-                    </span>
+                <button key={lesson.id} onClick={() => setCurrentLessonId(lesson.id)} className={`w-full text-left px-3 py-3 rounded-lg mb-1 text-sm flex items-center gap-3 transition-all duration-200 group ${currentLessonId === lesson.id ? 'bg-zinc-800/80 text-white border-l-2 border-cnc-accent shadow-lg' : 'text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-200'}`}>
+                    <span className={`w-6 h-6 rounded flex items-center justify-center text-xs font-mono ${currentLessonId === lesson.id ? 'bg-cnc-accent text-black' : 'bg-zinc-800 group-hover:bg-zinc-700'}`}>{lesson.module}</span>
                     <span className="truncate">{lesson.title.split('. ')[1]}</span>
                 </button>
             ))}
         </div>
       </aside>
 
-      {/* Main Content */}
       <main className="flex-1 flex flex-col h-full relative bg-radial-gradient">
-        
-        {/* Error Banner */}
         {machineState === MachineState.ALARM && errorMessage && (
             <div className="absolute top-20 left-1/2 transform -translate-x-1/2 z-[100] w-2/3 max-w-2xl animate-bounce-in">
                 <div className="bg-red-950/90 border-l-4 border-red-500 rounded-r shadow-2xl p-4 flex items-start gap-4 backdrop-blur-md">
                     <AlertTriangle className="text-red-500 shrink-0" size={32} />
-                    <div className="flex-1">
-                        <h3 className="text-red-400 font-bold text-lg mb-1 tracking-wider">ALARMA DEL SISTEMA</h3>
-                        <p className="text-white font-mono text-sm">{errorMessage}</p>
-                    </div>
+                    <div className="flex-1"><h3 className="text-red-400 font-bold text-lg mb-1 tracking-wider">ALARMA DEL SISTEMA</h3><p className="text-white font-mono text-sm">{errorMessage}</p></div>
                     <button onClick={handleReset} className="text-gray-400 hover:text-white"><XCircle size={24} /></button>
                 </div>
             </div>
         )}
 
-        {/* Top Control Bar (Hero Section) */}
         <header className="h-20 bg-zinc-900/50 backdrop-blur-md border-b border-zinc-800 flex items-center justify-between px-4 z-20 gap-4">
-            
-            {/* 1. Cycle Controls */}
             <div className="flex items-center gap-2">
-                <button 
-                    onClick={handlePlay} disabled={machineState === MachineState.ALARM}
-                    className={`flex items-center justify-center w-10 h-10 rounded-full shadow-lg transition-all transform active:scale-95
-                        ${machineState === MachineState.ALARM ? 'bg-zinc-800 text-zinc-600 cursor-not-allowed' : 'bg-green-600 hover:bg-green-500 text-white shadow-green-900/30'}`}
-                    title="Inicio Ciclo"
-                >
-                    <Play size={16} fill="currentColor" />
-                </button>
-                <button 
-                    onClick={handlePause} disabled={machineState === MachineState.ALARM}
-                    className={`flex items-center justify-center w-10 h-10 rounded-full transition-all border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white`}
-                    title="Pausa"
-                >
-                    <Pause size={16} fill="currentColor" />
-                </button>
-                <button 
-                    onClick={handleReset}
-                    className="flex items-center justify-center w-10 h-10 rounded-full transition-all text-zinc-400 hover:text-white hover:bg-red-900/20"
-                    title="Reset"
-                >
-                    <RotateCcw size={16} />
-                </button>
-
+                <button onClick={handlePlay} disabled={machineState === MachineState.ALARM} className={`flex items-center justify-center w-10 h-10 rounded-full shadow-lg transition-all transform active:scale-95 ${machineState === MachineState.ALARM ? 'bg-zinc-800 text-zinc-600 cursor-not-allowed' : 'bg-green-600 hover:bg-green-500 text-white shadow-green-900/30'}`} title="Inicio Ciclo"><Play size={16} fill="currentColor" /></button>
+                <button onClick={handlePause} disabled={machineState === MachineState.ALARM} className={`flex items-center justify-center w-10 h-10 rounded-full transition-all border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white`} title="Pausa"><Pause size={16} fill="currentColor" /></button>
+                <button onClick={handleReset} className="flex items-center justify-center w-10 h-10 rounded-full transition-all text-zinc-400 hover:text-white hover:bg-red-900/20" title="Reset"><RotateCcw size={16} /></button>
                 <div className="h-8 w-px bg-zinc-700 mx-2"></div>
-
-                {/* Import / CAM Button */}
-                <button 
-                    onClick={() => setIsImportModalOpen(true)}
-                    className="flex items-center gap-2 px-3 py-2 rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-white border border-zinc-700 transition-all text-xs font-bold"
-                >
-                    <CloudDownload size={16} className="text-blue-400" />
-                    <span className="hidden xl:inline">IMPORTAR CAD/CAM</span>
-                </button>
+                <button onClick={handleReset} className="flex items-center justify-center w-10 h-10 rounded-full bg-zinc-800 text-cnc-accent hover:text-white border border-zinc-700 transition-all shadow-inner" title="Retorno a Home (G28)"><Home size={16} /></button>
+                <button onClick={() => setIsImportModalOpen(true)} className="flex items-center gap-2 px-3 py-2 rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-white border border-zinc-700 transition-all text-xs font-bold"><CloudDownload size={16} className="text-blue-400" /><span className="hidden xl:inline">IMPORTAR CAD/CAM</span></button>
             </div>
 
-            {/* 2. Manual Spindle Controls, Material & Tolerance */}
             <div className="flex items-center gap-0 bg-black/40 border border-zinc-800 rounded-lg p-0 overflow-hidden">
-                 {/* Spindle */}
                  <div className="flex gap-1 p-1.5 border-r border-zinc-800 bg-zinc-900/50">
-                     <button
-                        title="Husillo CW (M03)"
-                        onClick={() => setManualSpindle({dir: 'CW', speed: 1000})}
-                        className={`p-1.5 rounded transition-all ${manualSpindle.dir === 'CW' ? 'bg-green-600 text-white shadow-[0_0_8px_#16a34a]' : 'bg-zinc-800 text-zinc-400 hover:text-white'}`}
-                    >
-                        <RotateCw size={14} />
-                    </button>
-                    <button
-                        title="Parada Husillo (M05)"
-                        onClick={() => setManualSpindle({dir: 'STOP', speed: 0})}
-                        className={`p-1.5 rounded transition-all ${manualSpindle.dir === 'STOP' ? 'bg-red-600 text-white shadow-[0_0_8px_#dc2626]' : 'bg-zinc-800 text-zinc-400 hover:text-white'}`}
-                    >
-                        <Ban size={14} />
-                    </button>
-                    <button
-                        title="Husillo CCW (M04)"
-                        onClick={() => setManualSpindle({dir: 'CCW', speed: 1000})}
-                        className={`p-1.5 rounded transition-all ${manualSpindle.dir === 'CCW' ? 'bg-yellow-600 text-black shadow-[0_0_8px_#ca8a04]' : 'bg-zinc-800 text-zinc-400 hover:text-white'}`}
-                    >
-                        <RotateCcw size={14} />
-                    </button>
+                     <button title="Husillo CW (M03)" onClick={() => setManualSpindle({dir: 'CW', speed: 1000})} className={`p-1.5 rounded transition-all ${manualSpindle.dir === 'CW' ? 'bg-green-600 text-white shadow-[0_0_8px_#16a34a]' : 'bg-zinc-800 text-zinc-400 hover:text-white'}`}><RotateCw size={14} /></button>
+                    <button title="Parada Husillo (M05)" onClick={() => setManualSpindle({dir: 'STOP', speed: 0})} className={`p-1.5 rounded transition-all ${manualSpindle.dir === 'STOP' ? 'bg-red-600 text-white shadow-[0_0_8px_#dc2626]' : 'bg-zinc-800 text-zinc-400 hover:text-white'}`}><Ban size={14} /></button>
+                    <button title="Husillo CCW (M04)" onClick={() => setManualSpindle({dir: 'CCW', speed: 1000})} className={`p-1.5 rounded transition-all ${manualSpindle.dir === 'CCW' ? 'bg-yellow-600 text-black shadow-[0_0_8px_#ca8a04]' : 'bg-zinc-800 text-zinc-400 hover:text-white'}`}><RotateCcw size={14} /></button>
                 </div>
-                
-                {/* Material */}
-                <div className="flex items-center gap-2 px-3 py-1.5 border-r border-zinc-800">
-                    <Layers size={14} className="text-zinc-500"/>
-                    <div className="flex flex-col">
-                        <span className="text-[8px] text-zinc-500 font-bold uppercase">Material</span>
-                        <select 
-                            value={stockMaterial}
-                            onChange={(e) => setStockMaterial(e.target.value as MaterialType)}
-                            className="bg-transparent text-xs font-bold text-zinc-300 focus:outline-none cursor-pointer w-24"
-                        >
-                            <option value="Steel">Acero</option>
-                            <option value="Aluminum">Aluminio</option>
-                            <option value="Wood">Madera</option>
-                            <option value="Carbon Fiber">Fibra Carbono</option>
-                            <option value="Epoxi">Epoxi</option>
-                            <option value="POM">POM (Acetal)</option>
-                        </select>
-                    </div>
-                </div>
-
-                {/* Tolerance */}
-                <div className="flex items-center gap-2 px-3 py-1.5">
-                    <Ruler size={14} className="text-zinc-500" />
-                    <div className="flex flex-col">
-                         <span className="text-[8px] text-zinc-500 font-bold uppercase">Tolerancia (mm)</span>
-                         <div className="flex items-center gap-1">
-                             <span className="text-xs text-zinc-400">±</span>
-                             <input 
-                                type="number" 
-                                step="0.01" 
-                                min="0.001" 
-                                max="1.0"
-                                value={tolerance}
-                                onChange={(e) => setTolerance(parseFloat(e.target.value))}
-                                className="bg-transparent text-xs font-bold text-cnc-accent focus:outline-none w-12 border-b border-zinc-700 focus:border-cnc-accent text-center"
-                             />
-                         </div>
-                    </div>
-                </div>
+                <div className="flex items-center gap-2 px-3 py-1.5 border-r border-zinc-800"><Layers size={14} className="text-zinc-500"/><div className="flex flex-col"><span className="text-[8px] text-zinc-500 font-bold uppercase">Material</span><select value={stockMaterial} onChange={(e) => setStockMaterial(e.target.value as MaterialType)} className="bg-transparent text-xs font-bold text-zinc-300 focus:outline-none cursor-pointer w-24"><option value="Steel">Acero</option><option value="Aluminum">Aluminio</option><option value="Wood">Madera</option><option value="Carbon Fiber">Fibra Carbono</option><option value="Epoxi">Epoxi</option><option value="POM">POM (Acetal)</option></select></div></div>
+                <div className="flex items-center gap-2 px-3 py-1.5 border-r border-zinc-800"><Ruler size={14} className="text-zinc-500" /><div className="flex flex-col"><span className="text-[8px] text-zinc-500 font-bold uppercase">Tolerancia (mm)</span><div className="flex items-center gap-1"><span className="text-xs text-zinc-400">±</span><input type="number" step="0.01" min="0.001" max="1.0" value={tolerance} onChange={(e) => setTolerance(parseFloat(e.target.value))} className="bg-transparent text-xs font-bold text-cnc-accent focus:outline-none w-12 border-b border-zinc-700 focus:border-cnc-accent text-center" /></div></div></div>
+                <button onClick={() => setIsSettingsModalOpen(true)} className="flex flex-col items-center justify-center w-12 h-full hover:bg-zinc-800/50 transition-colors group" title="Configuración de Máquina"><Settings size={18} className="text-zinc-500 group-hover:text-white" /></button>
             </div>
 
-            {/* 3. Combined Status Display */}
             <div className="bg-black border border-zinc-800 rounded px-4 py-1.5 flex items-center gap-4 font-lcd shadow-inner flex-1 min-w-0 max-w-2xl justify-between">
-                {/* Visual Indicators (Mini) */}
-                <div className="flex gap-3">
-                     <div className={`flex flex-col items-center justify-center w-8 h-8 rounded border border-white/10 ${simState.spindleDirection !== 'STOP' ? 'bg-zinc-800' : 'bg-red-900/20'}`}>
-                        {simState.spindleDirection === 'STOP' && <Octagon size={14} className="text-red-500" />}
-                        {simState.spindleDirection === 'CW' && <RotateCw size={14} className="text-green-500 animate-spin" />}
-                        {simState.spindleDirection === 'CCW' && <RotateCcw size={14} className="text-yellow-500 animate-spin" />}
-                        <span className="text-[8px] font-bold text-zinc-500 mt-0.5">RPM</span>
-                     </div>
-                     <div className={`flex flex-col items-center justify-center w-8 h-8 rounded border border-white/10 ${simState.coolant !== 'OFF' ? 'bg-blue-900/20' : 'bg-zinc-800'}`}>
-                        <Droplets size={14} className={simState.coolant === 'FLOOD' ? "text-blue-500" : simState.coolant === 'MIST' ? "text-cyan-300" : "text-zinc-600"} />
-                        <span className="text-[8px] font-bold text-zinc-500 mt-0.5">
-                            {simState.coolant === 'OFF' ? 'OFF' : simState.coolant === 'MIST' ? 'MIST' : 'FULL'}
-                        </span>
-                     </div>
-                </div>
-
+                <div className="flex gap-3"><div className={`flex flex-col items-center justify-center w-8 h-8 rounded border border-white/10 ${simState.spindleDirection !== 'STOP' ? 'bg-zinc-800' : 'bg-red-900/20'}`}>{simState.spindleDirection === 'STOP' && <Octagon size={14} className="text-red-500" />}{simState.spindleDirection === 'CW' && <RotateCw size={14} className="text-green-500 animate-spin" />}{simState.spindleDirection === 'CCW' && <RotateCcw size={14} className="text-yellow-500 animate-spin" />}<span className="text-[8px] font-bold text-zinc-500 mt-0.5">RPM</span></div><div className={`flex flex-col items-center justify-center w-8 h-8 rounded border border-white/10 ${simState.coolant !== 'OFF' ? 'bg-blue-900/20' : 'bg-zinc-800'}`}><Droplets size={14} className={simState.coolant === 'FLOOD' ? "text-blue-500" : simState.coolant === 'MIST' ? "text-cyan-300" : "text-zinc-600"} /><span className="text-[8px] font-bold text-zinc-500 mt-0.5">{simState.coolant === 'OFF' ? 'OFF' : simState.coolant === 'MIST' ? 'MIST' : 'FULL'}</span></div></div>
                 <div className="h-8 w-px bg-zinc-800"></div>
-
-                {/* Coordinates */}
-                <div className="flex flex-col justify-center">
-                    <div className="flex items-center gap-2">
-                        <span className="text-cnc-accent font-bold text-xs w-3">X</span>
-                        <span className="text-zinc-100 text-sm tracking-widest bg-zinc-900/50 px-1 rounded min-w-[70px] text-right">{simState.x.toFixed(3)}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <span className="text-cnc-accent font-bold text-xs w-3">Z</span>
-                        <span className="text-zinc-100 text-sm tracking-widest bg-zinc-900/50 px-1 rounded min-w-[70px] text-right">{simState.z.toFixed(3)}</span>
-                    </div>
-                </div>
-
+                <div className="flex flex-col justify-center"><div className="flex items-center gap-2"><span className="text-cnc-accent font-bold text-xs w-3">X</span><span className="text-zinc-100 text-sm tracking-widest bg-zinc-900/50 px-1 rounded min-w-[70px] text-right">{simState.x.toFixed(3)}</span></div><div className="flex items-center gap-2"><span className="text-cnc-accent font-bold text-xs w-3">Z</span><span className="text-zinc-100 text-sm tracking-widest bg-zinc-900/50 px-1 rounded min-w-[70px] text-right">{simState.z.toFixed(3)}</span></div></div>
                  <div className="h-8 w-px bg-zinc-800"></div>
-
-                 {/* Machine Data */}
-                 <div className="grid grid-cols-4 gap-x-4 text-[10px]">
-                    <div className="flex flex-col">
-                         <span className="text-zinc-600 font-bold">MODO</span>
-                         <span className={`font-bold ${machineState === MachineState.ALARM ? 'text-red-500 animate-pulse' : 'text-cnc-accent'}`}>{translateState(machineState)}</span>
-                    </div>
-                    <div className="flex flex-col">
-                        <span className="text-zinc-600 font-bold">HERR.</span>
-                        <span className="text-white">T{simState.tool < 10 ? '0'+simState.tool : simState.tool}</span>
-                    </div>
-                    <div className="flex flex-col">
-                        <span className="text-zinc-600 font-bold">VELOCIDAD</span>
-                        <span className="text-white">{simState.spindleSpeed}</span>
-                    </div>
-                     <div className="flex flex-col relative group cursor-pointer" onClick={handleResetWear}>
-                        <span className="text-zinc-600 font-bold flex items-center gap-1">DESGASTE <RefreshCw size={8}/></span>
-                        <span className={`${activeToolConfig.wear > 80 ? 'text-red-500 animate-pulse' : activeToolConfig.wear > 50 ? 'text-yellow-500' : 'text-green-500'} font-bold`}>
-                            {activeToolConfig.wear.toFixed(1)}%
-                        </span>
-                    </div>
-                 </div>
+                 <div className="grid grid-cols-4 gap-x-4 text-[10px]"><div className="flex flex-col"><span className="text-zinc-600 font-bold">MODO</span><span className={`font-bold ${machineState === MachineState.ALARM ? 'text-red-500 animate-pulse' : 'text-cnc-accent'}`}>{translateState(machineState)}</span></div><div className="flex flex-col"><span className="text-zinc-600 font-bold">HERR.</span><span className="text-white">T{simState.tool < 10 ? '0'+simState.tool : simState.tool}</span></div><div className="flex flex-col"><span className="text-zinc-600 font-bold">VELOCIDAD</span><span className="text-white">{simState.spindleSpeed}</span></div><div className="flex flex-col relative group cursor-pointer" onClick={handleResetWear}><span className="text-zinc-600 font-bold flex items-center gap-1">DESGASTE <RefreshCw size={8}/></span><span className={`${activeToolConfig.wear > 80 ? 'text-red-500 animate-pulse' : activeToolConfig.wear > 50 ? 'text-yellow-500' : 'text-green-500'} font-bold`}>{activeToolConfig.wear.toFixed(1)}%</span></div></div>
             </div>
 
-            {/* 4. Feed Control & E-STOP */}
             <div className="flex items-center gap-3">
-                 <div className="flex items-center gap-3 bg-zinc-900 px-3 py-1.5 rounded-lg border border-zinc-800">
-                    <Gauge size={16} className="text-zinc-500" />
-                    <div className="flex flex-col w-36">
-                        <div className="flex justify-between items-center text-[10px] text-zinc-500 uppercase font-bold mb-0.5">
-                            <span>Avance %</span>
-                            <div className="flex items-center">
-                                <input 
-                                    type="number" 
-                                    min="10" 
-                                    max="150" 
-                                    value={feedOverride}
-                                    onChange={(e) => {
-                                        let val = parseInt(e.target.value);
-                                        if (isNaN(val)) val = 0;
-                                        if (val > 150) val = 150;
-                                        setFeedOverride(val);
-                                    }}
-                                    onBlur={() => {
-                                        let val = feedOverride;
-                                        if (val < 10) val = 10;
-                                        setFeedOverride(val);
-                                    }}
-                                    className="w-10 bg-transparent text-right text-cnc-accent outline-none border-b border-zinc-700 focus:border-cnc-accent text-xs font-mono"
-                                />
-                            </div>
-                        </div>
-                        <input 
-                            type="range" min="10" max="150" step="1" 
-                            value={Math.max(10, feedOverride)} 
-                            onChange={(e) => setFeedOverride(Number(e.target.value))}
-                            className="h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-cnc-accent"
-                        />
-                    </div>
-                </div>
-
-                 <button
-                    onClick={() => handleAlarm("PARADA DE EMERGENCIA ACTIVADA")}
-                    className="flex items-center justify-center w-10 h-10 rounded-full bg-red-600 border-2 border-red-800 shadow-[0_0_10px_rgba(220,38,38,0.5)] hover:shadow-[0_0_15px_rgba(220,38,38,0.8)] active:scale-95 transition-all overflow-hidden"
-                    title="PARADA DE EMERGENCIA"
-                >
-                    <Octagon size={20} className="text-white animate-pulse" fill="currentColor" strokeWidth={3} />
-                </button>
+                 <div className="flex items-center gap-3 bg-zinc-900 px-3 py-1.5 rounded-lg border border-zinc-800"><Gauge size={16} className="text-zinc-500" /><div className="flex flex-col w-36"><div className="flex justify-between items-center text-[10px] text-zinc-500 uppercase font-bold mb-0.5"><span>Avance %</span><div className="flex items-center"><input type="number" min="10" max="150" value={feedOverride} onChange={(e) => { let val = parseInt(e.target.value); if (isNaN(val)) val = 0; if (val > 150) val = 150; setFeedOverride(val); }} onBlur={() => { let val = feedOverride; if (val < 10) val = 10; setFeedOverride(val); }} className="w-10 bg-transparent text-right text-cnc-accent outline-none border-b border-zinc-700 focus:border-cnc-accent text-xs font-mono" /></div></div><input type="range" min="10" max="150" step="1" value={Math.max(10, feedOverride)} onChange={(e) => setFeedOverride(Number(e.target.value))} className="h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-cnc-accent" /></div></div>
+                 <button onClick={() => handleAlarm("PARADA DE EMERGENCIA ACTIVADA")} className="flex items-center justify-center w-10 h-10 rounded-full bg-red-600 border-2 border-red-800 shadow-[0_0_10px_rgba(220,38,38,0.5)] hover:shadow-[0_0_15px_rgba(220,38,38,0.8)] active:scale-95 transition-all overflow-hidden" title="PARADA DE EMERGENCIA"><Octagon size={20} className="text-white animate-pulse" fill="currentColor" strokeWidth={3} /></button>
             </div>
         </header>
 
-        {/* Workspace */}
         <div className="flex-1 p-4 grid grid-cols-12 gap-4 overflow-hidden relative">
             <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-5 pointer-events-none"></div>
-
-            {/* Left: Code & Lesson */}
             <div className="col-span-4 flex flex-col gap-4 overflow-hidden z-10">
                 <div className="h-2/5 bg-zinc-900/80 backdrop-blur rounded-xl p-0 border border-zinc-800 overflow-hidden flex flex-col shadow-lg">
-                    <div className="px-4 py-3 bg-zinc-800/50 border-b border-zinc-800 flex items-center gap-2">
-                         <Terminal size={14} className="text-cnc-accent" />
-                         <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Lección</span>
-                    </div>
-                    <div className="p-4 overflow-y-auto custom-scrollbar">
-                        <h2 className="text-white font-bold text-lg mb-2">{currentLesson.title}</h2>
-                        <div className="prose prose-invert prose-sm text-zinc-400">
-                            {currentLesson.content.split('\n').map((line, i) => (
-                                <p key={i} className="mb-2 leading-relaxed">{line}</p>
-                            ))}
-                        </div>
-                    </div>
+                    <div className="px-4 py-3 bg-zinc-800/50 border-b border-zinc-800 flex items-center gap-2"><Terminal size={14} className="text-cnc-accent" /><span className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Lección</span></div>
+                    <div className="p-4 overflow-y-auto custom-scrollbar"><h2 className="text-white font-bold text-lg mb-2">{currentLesson.title}</h2><div className="prose prose-invert prose-sm text-zinc-400">{currentLesson.content.split('\n').map((line, i) => (<p key={i} className="mb-2 leading-relaxed">{line}</p>))}</div></div>
                 </div>
-                <div className="flex-1 min-h-0 shadow-lg rounded-xl overflow-hidden">
-                    <Editor code={code} onChange={setCode} activeLine={currentLine} />
-                </div>
+                <div className="flex-1 min-h-0 shadow-lg rounded-xl overflow-hidden"><Editor code={code} onChange={setCode} activeLine={currentLine} /></div>
             </div>
-
-            {/* Right: Sim & AI */}
             <div className="col-span-8 flex flex-col gap-4 z-10">
-                
-                {/* Aspire Toolbar - Inserted above Simulator */}
                 <div className="flex gap-2 mb-0 overflow-x-auto pb-1 bg-black/40 p-2 rounded border border-zinc-800 backdrop-blur-sm">
                     <ShortcutButton k="F11/F12" label="Vista" icon={<Layers size={14}/>} onClick={() => { setShowPaths(!showPaths); showToast(showPaths ? "Vista: Dibujo 2D" : "Vista: Trayectorias"); }} />
                     <ShortcutButton k="F10" label="Trazo" icon={<PenTool size={14}/>} onClick={() => { setShowTrace(!showTrace); showToast(!showTrace ? "Vista: Trazo Histórico" : "Vista: Trazo Oculto"); }} />
@@ -496,30 +288,11 @@ export default function App() {
                     <ShortcutButton k="9" label="Rot -45°" icon={<RotateCcw size={14}/>} onClick={() => showToast("Acción: Rotar 45° CCW")} />
                     <ShortcutButton k="0" label="Rot +45°" icon={<RotateCw size={14}/>} onClick={() => showToast("Acción: Rotar 45° CW")} />
                 </div>
-
                 <div className="flex-1 min-h-0 relative rounded-xl overflow-hidden border border-zinc-700 shadow-2xl">
-                    <Simulator 
-                        commands={parsedCommands} 
-                        machineState={machineState} 
-                        currentLine={currentLine} 
-                        feedOverride={feedOverride} 
-                        stockMaterial={stockMaterial}
-                        manualSpindle={manualSpindle}
-                        onError={handleAlarm}
-                        onStateChange={setSimState}
-                        onRequestPause={handlePause}
-                        onRequestResume={handlePlay}
-                        tools={tools}
-                        onToolWear={updateToolWear}
-                        showPaths={showPaths}
-                        showTrace={showTrace}
-                    />
+                    <Simulator commands={parsedCommands} machineState={machineState} currentLine={currentLine} feedOverride={feedOverride} stockMaterial={stockMaterial} manualSpindle={manualSpindle} onError={handleAlarm} onStateChange={setSimState} onRequestPause={handlePause} onRequestResume={handlePlay} tools={tools} onToolWear={updateToolWear} showPaths={showPaths} showTrace={showTrace} homePosition={homePosition} />
                 </div>
-                <div className="h-48 shadow-lg">
-                    <GeminiTutor />
-                </div>
+                <div className="h-48 shadow-lg"><GeminiTutor /></div>
             </div>
-
         </div>
       </main>
     </div>
